@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollie & Rue - Network Co-op</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700&display=swap');
+        
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: #fff;
+            font-family: 'Montserrat', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            border: 4px solid #333;
+            border-radius: 8px;
+            background-color: #2c3e50;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 24px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        #message-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 40px;
+            border-radius: 12px;
+            display: none;
+            pointer-events: auto;
+        }
+
+        button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 18px;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: bold;
+            color: #1a1a1a;
+            background-color: #fcdbb6;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background-color: #fff;
+        }
+
+        .controls {
+            margin-top: 15px;
+            display: flex;
+            gap: 40px;
+            font-size: 14px;
+            color: #aaa;
+        }
+
+        .controls span {
+            color: #00a3ad; /* Ollie Teal */
+        }
+        .controls span.rue {
+            color: #fcdbb6; /* Rue Skin/Suit */
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header" style="margin-bottom: 10px; width: 800px;">
+        <div>Ollie & Rue</div>
+        <div id="level-display">Level 1</div>
+    </div>
+
+    <div id="game-container">
+        <!-- 800x600 allows for a 20x15 grid of 40x40 tiles -->
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        
+        <div id="ui-layer">
+            <div id="message-overlay">
+                <h2 id="overlay-title">Level Complete!</h2>
+                <p id="overlay-desc"></p>
+                <button id="overlay-btn">Next Level</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div><span>Ollie (Teal):</span> WASD to move & jump</div>
+        <div><span class="rue">Rue (CEO):</span> IJKL to move & jump</div>
+    </div>
+
+<script>
+/**
+ * OLLIE & RUE - Optus Network Co-op Game
+ * Single File Canvas 2D Implementation
+ */
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const TILE_SIZE = 40;
+const COLS = 20;
+const ROWS = 15;
+
+// --- INLINE SVG SPRITES ---
+// Ollie: Optus Mascot (Teal)
+const ollieSVG = `data:image/svg+xml;charset=utf-8,
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+    <circle cx="20" cy="20" r="15" fill="%2300a3ad"/>
+    <path d="M 10 18 Q 20 10 30 18 L 30 25 Q 20 30 10 25 Z" fill="white"/>
+    <circle cx="16" cy="20" r="2" fill="black"/>
+    <circle cx="24" cy="20" r="2" fill="black"/>
+    <rect x="14" y="34" width="3" height="6" fill="black"/>
+    <rect x="23" y="34" width="3" height="6" fill="black"/>
+</svg>`;
+
+// Rue: CEO Stephen Rue (Navy Suit, Grey Hair)
+const rueSVG = `data:image/svg+xml;charset=utf-8,
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+    <!-- Head -->
+    <rect x="14" y="4" width="12" height="12" rx="4" fill="%23fcdbb6"/>
+    <!-- Hair (Grey) -->
+    <path d="M 12 10 Q 20 0 28 10 L 28 5 Q 20 -2 12 5 Z" fill="%23888888"/>
+    <!-- Eyes -->
+    <circle cx="17" cy="10" r="1.5" fill="black"/>
+    <circle cx="23" cy="10" r="1.5" fill="black"/>
+    <!-- Smile -->
+    <path d="M 18 13 Q 20 15 22 13" stroke="black" fill="transparent"/>
+    <!-- Body (Navy Suit) -->
+    <rect x="11" y="16" width="18" height="16" rx="2" fill="%2314213d"/>
+    <!-- Shirt (Light Blue) -->
+    <polygon points="17,16 23,16 20,22" fill="%23a8d0e6"/>
+    <!-- Legs (Navy Pants) -->
+    <rect x="13" y="32" width="5" height="8" fill="%2314213d"/>
+    <rect x="22" y="32" width="5" height="8" fill="%2314213d"/>
+</svg>`;
+
+const ollieImg = new Image(); ollieImg.src = ollieSVG;
+const rueImg = new Image(); rueImg.src = rueSVG;
+
+// --- LEVEL DESIGN ---
+// 0: Empty, 1: Wall/Floor, 2: 5G Hazard (Kills Ollie), 3: Fiber Hazard (Kills Rue)
+// 4: Ollie Door, 5: Rue Door, 6: Button, 7: Gate (Linked to Button), 8: Crate
+const levels = [
+    // LEVEL 1: The Onboarding (Redesigned: Fully open, no traps, easy jumps)
+    [
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,5,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1],
+        [1,1,1,1,1,1,2,2,1,1,1,3,3,1,1,1,1,1,1,1]
+    ],
+    // LEVEL 2: The Switchboard (Introduces buttons and gates)
+    [
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,5,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1],
+        [1,0,0,0,0,0,1,1,1,7,1,1,1,1,0,0,1,1,1,1],
+        [1,0,0,0,0,0,1,1,1,0,1,1,1,1,0,0,0,0,0,1],
+        [1,0,0,0,0,0,1,1,1,0,1,1,1,1,0,0,0,0,0,1],
+        [1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1],
+        [1,0,0,0,1,1,1,1,0,0,0,1,1,1,1,1,1,1,1,1],
+        [1,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0,1],
+        [1,0,0,0,0,6,0,1,0,0,0,1,0,0,0,0,0,0,0,1],
+        [1,1,1,1,1,1,1,1,2,3,2,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,2,3,2,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,2,3,2,1,1,1,1,1,1,1,1,1]
+    ],
+    // LEVEL 3: Network Congestion (Puzzle with crate)
+    [
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,1],
+        [1,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,1,1,1,1,1,1,1,1,1,0,0,0,0,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,0,0,0,0,1,1,1,1,1,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,1,0,0,1],
+        [1,0,0,1,1,1,0,0,1,1,1,0,0,1,1,1,1,0,0,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,1,1,1,2,2,2,2,3,3,3,3,2,2,2,2,1,1,1,1],
+        [1,1,1,1,2,2,2,2,3,3,3,3,2,2,2,2,1,1,1,1]
+    ]
+];
+
+// --- GAME STATE & PHYSICS SPECS ---
+let currentLevel = 0;
+let map = [];
+let crate = null;
+let buttonPressed = false;
+let gameState = 'playing'; // playing, win, dead
+
+// Slower, more controlled physics constants
+const GRAVITY = 0.35;
+const FRICTION = 0.75;      // High friction for snappy stops
+const ACCEL = 0.4;          // Slower acceleration
+const MAX_SPEED = 3.2;      // Slower max walk speed
+const JUMP_FORCE = -7.5;    // Lower jump height
+
+const keys = {
+    w: false, a: false, d: false,
+    i: false, j: false, l: false
+};
+
+// Player Class
+class Player {
+    constructor(x, y, type, img) {
+        this.x = x;
+        this.y = y;
+        this.width = 30;
+        this.height = 36;
+        this.vx = 0;
+        this.vy = 0;
+        this.type = type; // 'ollie' or 'rue'
+        this.img = img;
+        this.onGround = false;
+        this.atDoor = false;
+    }
+
+    update(controls) {
+        // Horizontal Movement
+        if (keys[controls.left]) {
+            this.vx -= ACCEL;
+        } else if (keys[controls.right]) {
+            this.vx += ACCEL;
+        } else {
+            this.vx *= FRICTION;
+        }
+
+        // Clamp speed
+        if (this.vx > MAX_SPEED) this.vx = MAX_SPEED;
+        if (this.vx < -MAX_SPEED) this.vx = -MAX_SPEED;
+        if (Math.abs(this.vx) < 0.1) this.vx = 0;
+
+        // Jump
+        if (keys[controls.up] && this.onGround) {
+            this.vy = JUMP_FORCE;
+            this.onGround = false;
+        }
+
+        // Gravity
+        this.vy += GRAVITY;
+
+        // X Collision
+        this.x += this.vx;
+        this.handleCollisions('x');
+
+        // Y Collision
+        this.y += this.vy;
+        this.onGround = false;
+        this.handleCollisions('y');
+        
+        // Crate pushing (X axis only)
+        if (crate) {
+            if (this.x < crate.x + crate.size && this.x + this.width > crate.x &&
+                this.y < crate.y + crate.size && this.y + this.height > crate.y) {
+                
+                // Push right
+                if (this.vx > 0 && this.x + this.width - this.vx <= crate.x) {
+                    this.x = crate.x - this.width;
+                    crate.x += this.vx;
+                    crate.handleCollisions('x');
+                }
+                // Push left
+                else if (this.vx < 0 && this.x - this.vx >= crate.x + crate.size) {
+                    this.x = crate.x + crate.size;
+                    crate.x += this.vx;
+                    crate.handleCollisions('x');
+                }
+            }
+        }
+
+        this.checkEnvironment();
+    }
+
+    handleCollisions(axis) {
+        let leftTile = Math.floor(this.x / TILE_SIZE);
+        let rightTile = Math.floor((this.x + this.width) / TILE_SIZE);
+        let topTile = Math.floor(this.y / TILE_SIZE);
+        let bottomTile = Math.floor((this.y + this.height) / TILE_SIZE);
+
+        for (let r = topTile; r <= bottomTile; r++) {
+            for (let c = leftTile; c <= rightTile; c++) {
+                if (r < 0 || r >= ROWS || c < 0 || c >= COLS) continue;
+                
+                let tile = map[r][c];
+                // Solid tiles: 1 (Wall), 7 (Gate, if closed)
+                if (tile === 1 || (tile === 7 && !buttonPressed)) {
+                    if (axis === 'x') {
+                        if (this.vx > 0) {
+                            this.x = c * TILE_SIZE - this.width - 0.1;
+                        } else if (this.vx < 0) {
+                            this.x = (c + 1) * TILE_SIZE + 0.1;
+                        }
+                        this.vx = 0;
+                    } else if (axis === 'y') {
+                        if (this.vy > 0) {
+                            this.y = r * TILE_SIZE - this.height - 0.1;
+                            this.onGround = true;
+                        } else if (this.vy < 0) {
+                            this.y = (r + 1) * TILE_SIZE + 0.1;
+                        }
+                        this.vy = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    checkEnvironment() {
+        // Check center bottom point for hazards and buttons
+        let cx = Math.floor((this.x + this.width / 2) / TILE_SIZE);
+        let cy = Math.floor((this.y + this.height) / TILE_SIZE);
+        
+        if (cy >= 0 && cy < ROWS && cx >= 0 && cx < COLS) {
+            let tile = map[cy][cx];
+            
+            // Hazards
+            if (tile === 2 && this.type === 'ollie') die("Ollie cannot touch 5G Interference!");
+            if (tile === 3 && this.type === 'rue') die("Rue cannot touch Fiber Optics!");
+            
+            // Buttons
+            if (tile === 6) buttonPressed = true;
+
+            // Doors
+            let centerCy = Math.floor((this.y + this.height/2) / TILE_SIZE);
+            let doorTile = map[centerCy][cx];
+            this.atDoor = false;
+            if (this.type === 'ollie' && doorTile === 4) this.atDoor = true;
+            if (this.type === 'rue' && doorTile === 5) this.atDoor = true;
+        }
+    }
+
+    draw() {
+        ctx.drawImage(this.img, this.x, this.y, this.width, this.height);
+    }
+}
+
+class Crate {
+    constructor(c, r) {
+        this.x = c * TILE_SIZE;
+        this.y = r * TILE_SIZE;
+        this.size = 36;
+        this.vy = 0;
+    }
+    update() {
+        this.vy += GRAVITY;
+        this.y += this.vy;
+        
+        // Floor collision
+        let bottomTile = Math.floor((this.y + this.size) / TILE_SIZE);
+        let leftTile = Math.floor(this.x / TILE_SIZE);
+        let rightTile = Math.floor((this.x + this.size) / TILE_SIZE);
+
+        for (let c = leftTile; c <= rightTile; c++) {
+            if (bottomTile < ROWS && (map[bottomTile][c] === 1 || map[bottomTile][c] === 2 || map[bottomTile][c] === 3)) {
+                this.y = bottomTile * TILE_SIZE - this.size;
+                this.vy = 0;
+                
+                // Crate covers hazard pits, temporarily making them ground (1)
+                if(map[bottomTile][c] === 2 || map[bottomTile][c] === 3) {
+                     map[bottomTile][c] = 1; 
+                }
+            }
+        }
+    }
+    handleCollisions(axis) {
+        let leftTile = Math.floor(this.x / TILE_SIZE);
+        let rightTile = Math.floor((this.x + this.size) / TILE_SIZE);
+        let r = Math.floor((this.y + this.size/2) / TILE_SIZE);
+
+        if (axis === 'x') {
+            if (map[r][rightTile] === 1) {
+                this.x = rightTile * TILE_SIZE - this.size;
+            } else if (map[r][leftTile] === 1) {
+                this.x = (leftTile + 1) * TILE_SIZE;
+            }
+        }
+    }
+    draw() {
+        ctx.fillStyle = '#8B4513'; // Brown crate
+        ctx.fillRect(this.x, this.y, this.size, this.size);
+        ctx.strokeStyle = '#5c2e0b';
+        ctx.strokeRect(this.x, this.y, this.size, this.size);
+        ctx.beginPath();
+        ctx.moveTo(this.x, this.y);
+        ctx.lineTo(this.x + this.size, this.y + this.size);
+        ctx.stroke();
+    }
+}
+
+let player1, player2;
+
+function loadLevel(index) {
+    if (index >= levels.length) {
+        showOverlay("You Win!", "You completed all network configurations.", "Play Again", () => loadLevel(0));
+        return;
+    }
+    
+    currentLevel = index;
+    document.getElementById('level-display').innerText = `Level ${index + 1}`;
+    map = JSON.parse(JSON.stringify(levels[index])); // Deep copy map
+    crate = null;
+    buttonPressed = false;
+    gameState = 'playing';
+    document.getElementById('message-overlay').style.display = 'none';
+
+    // Spawn logic
+    player1 = new Player(2 * TILE_SIZE, 11 * TILE_SIZE, 'ollie', ollieImg);
+    player2 = new Player(4 * TILE_SIZE, 11 * TILE_SIZE, 'rue', rueImg);
+
+    // Find custom spawns/objects in map definition
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            if (map[r][c] === 8) {
+                crate = new Crate(c, r);
+                map[r][c] = 0; // Clear tile
+            }
+        }
+    }
+}
+
+function die(reason) {
+    if (gameState === 'dead') return;
+    gameState = 'dead';
+    showOverlay("Connection Lost", reason, "Restart Level", () => loadLevel(currentLevel));
+}
+
+function showOverlay(title, desc, btnText, action) {
+    document.getElementById('overlay-title').innerText = title;
+    document.getElementById('overlay-desc').innerText = desc;
+    let btn = document.getElementById('overlay-btn');
+    btn.innerText = btnText;
+    btn.onclick = action;
+    document.getElementById('message-overlay').style.display = 'block';
+}
+
+function update() {
+    if (gameState !== 'playing') return;
+
+    buttonPressed = false; // Reset per frame, check in player update
+
+    if (crate) crate.update();
+    
+    player1.update({up: 'w', left: 'a', right: 'd'});
+    player2.update({up: 'i', left: 'j', right: 'l'});
+
+    // Check Win Condition
+    if (player1.atDoor && player2.atDoor) {
+        gameState = 'win';
+        showOverlay("Level Complete!", "Both players reached the portal.", "Next Level", () => loadLevel(currentLevel + 1));
+    }
+}
+
+function drawMap() {
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            let tile = map[r][c];
+            let x = c * TILE_SIZE;
+            let y = r * TILE_SIZE;
+
+            if (tile === 1) { // Wall/Floor
+                ctx.fillStyle = '#34495e';
+                ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                ctx.strokeStyle = '#2c3e50';
+                ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
+            } else if (tile === 2) { // 5G Hazard (Purple/Magenta)
+                ctx.fillStyle = 'rgba(255, 0, 255, 0.7)';
+                ctx.fillRect(x, y + 10, TILE_SIZE, TILE_SIZE - 10);
+            } else if (tile === 3) { // Fiber Hazard (Bright Green)
+                ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
+                ctx.fillRect(x, y + 10, TILE_SIZE, TILE_SIZE - 10);
+            } else if (tile === 4) { // Ollie Door
+                ctx.fillStyle = '#00a3ad'; // Teal
+                ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                ctx.fillStyle = '#000';
+                ctx.fillRect(x + 10, y + 10, 20, 30);
+            } else if (tile === 5) { // Rue Door
+                ctx.fillStyle = '#fcdbb6'; // Rue Yellow/Skin
+                ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                ctx.fillStyle = '#000';
+                ctx.fillRect(x + 10, y + 10, 20, 30);
+            } else if (tile === 6) { // Button
+                ctx.fillStyle = buttonPressed ? '#27ae60' : '#e74c3c';
+                ctx.fillRect(x + 5, y + 30, 30, 10);
+            } else if (tile === 7) { // Gate
+                if (!buttonPressed) {
+                    ctx.fillStyle = '#7f8c8d';
+                    ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                    ctx.fillStyle = '#fff';
+                    ctx.font = '10px Arial';
+                    ctx.fillText("LOCKED", x + 2, y + 20);
+                }
+            }
+        }
+    }
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawMap();
+    if (crate) crate.draw();
+    player1.draw();
+    player2.draw();
+}
+
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+// Input Listeners
+window.addEventListener('keydown', (e) => {
+    if (keys.hasOwnProperty(e.key.toLowerCase())) {
+        keys[e.key.toLowerCase()] = true;
+    }
+});
+
+window.addEventListener('keyup', (e) => {
+    if (keys.hasOwnProperty(e.key.toLowerCase())) {
+        keys[e.key.toLowerCase()] = false;
+    }
+});
+
+// Init Game once images load
+let imagesLoaded = 0;
+function init() {
+    imagesLoaded++;
+    if(imagesLoaded === 2) {
+        loadLevel(0);
+        gameLoop();
+    }
+}
+ollieImg.onload = init;
+rueImg.onload = init;
+
+</script>
+</body>
+</html>
