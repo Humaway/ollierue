@@ -449,7 +449,11 @@ const { world, cam, frame, player } = (() => {
   function playerTick(dt) {
     const a = P.actor;
     P.running = false;
-    if (!a || !P.enabled || a.set !== cur || a.mv.on) { if (a && LOCO[a.anim] && !a.mv.on) setAnim(a, 'idle'); return; }
+    if (!a || !P.enabled || a.set !== cur || a.mv.on) {
+      if (a && LOCO[a.anim] && !a.mv.on) setAnim(a, 'idle');
+      P.ctrlYaw = Math.atan2(cs.look.x - cs.pos.x, cs.look.z - cs.pos.z);
+      return;
+    }
     const mx = input.move.x, my = input.move.y, tank = options.controls === 'tank';
     if (P.frozenT > 0) { P.frozenT -= dt; if (LOCO[a.anim]) setAnim(a, 'idle'); return; }
     let dx = 0, dz = 0, mag = 0, turning = false;
@@ -523,7 +527,7 @@ const { world, cam, frame, player } = (() => {
   const F = { pos: V(), look: V(), fov: 40, up: V().set(0, 0, -1) };
   const SP = [], SF = [], SA = [];
   for (let i = 0; i < 8; i++) { SP.push(V()); SF.push(V()); SA.push(null); }
-  let nS = 0, nAct = 0, feetY = 0, eyeY = 0;
+  let nS = 0, nAct = 0, feetY = 0, eyeY = 0, logMiss = false;
   const DY = { ECU: -0.03, CLOSE: -0.08, MID: -0.35, TWO: -0.3, THREE: -0.35, TOP: 0 };
   const C25 = Math.cos(25 * DEG), S25 = Math.sin(25 * DEG), C20 = Math.cos(20 * DEG), S20 = Math.sin(20 * DEG);
   const FO = { angle: null, side: null, dist: null, height: 0, fov: null, offset: 0, facing: false };  // frame options, filled per call
@@ -538,7 +542,7 @@ const { world, cam, frame, player } = (() => {
     if (an) { SP[nS].copy(an.at); if (an.from) SF[nS].set(an.from.x - an.at.x, 0, an.from.z - an.at.z).normalize(); else SF[nS].set(0, 0, 0); nS++; return; }
     const m = e && e.def.marks && e.def.marks[x];
     if (m) { SP[nS].set(m[0], (m[1] || 0) + 1.55, m[2]); SF[nS].set(Math.sin(m[3] || 0), 0, Math.cos(m[3] || 0)); nS++; return; }
-    testLog('cam: nothing called ' + x);
+    if (logMiss) testLog('cam: nothing called ' + x);
   }
   function gather(on, e) {
     nS = 0; nAct = 0; feetY = 0; eyeY = 0;
@@ -643,6 +647,7 @@ const { world, cam, frame, player } = (() => {
         if (!blocked(L, d.x, d.z, D, e)) break;
       }
     }
+    out.up.set(-d.x, 0, -d.z);           // "up" for near-vertical views (crane from the sky, top-downs)
     if (top) { Pp.set(L.x, L.y + D, L.z); out.up.copy(f); }
     else if (o.angle === 'high') Pp.set(L.x + d.x * D * C25, L.y + D * S25, L.z + d.z * D * C25);
     else if (o.angle === 'low') { Pp.set(L.x + d.x * D * C20, L.y - D * S20, L.z + d.z * D * C20); Pp.y = Math.max(Pp.y, (nAct ? feetY : L.y - 1.2) + 0.15); }
@@ -757,6 +762,16 @@ const { world, cam, frame, player } = (() => {
 
   // base framing for any shot kind into o (a shotState) — used by cam.shot and the right half of a split
   function baseInto(o, step, e) {
+    logMiss = true;
+    const ok = baseKind(o, step, e);
+    logMiss = false;
+    if (ok && o.kind !== 'TOP' && !(o.kind === 'INSERT' && step.angle === 'top') && SIZES[o.kind] !== 1) {
+      t1.set(o.look0.x - o.pos0.x, 0, o.look0.z - o.pos0.z);
+      if (t1.lengthSq() > 1e-4) o.up.copy(t1.normalize());
+    }
+    return ok;
+  }
+  function baseKind(o, step, e) {
     let k = String(step.shot || 'MID').toUpperCase();
     const raw = k;
     if (MOVES[k]) k = String(step.size || 'MID').toUpperCase();
@@ -871,7 +886,7 @@ const { world, cam, frame, player } = (() => {
       if (an) {                           // the camera sits behind the screen: start the lens just past it
         t1.subVectors(an.at, S.pos0); t2.subVectors(S.look0, S.pos0);
         const sd = t1.length();
-        if (t1.dot(t2) > 0 && sd < t2.length() - 0.2) shotAt.near = sd + 0.06;
+        if (t1.dot(t2) > 0 && sd < t2.length() - 0.3) shotAt.near = sd + 0.15;
       }
     }
     C.name = String(step.shot) + (step.move ? ' ' + step.move : '') + (step.on != null ? ' ' + step.on : step.at != null ? ' ' + step.at : '');
@@ -919,10 +934,13 @@ const { world, cam, frame, player } = (() => {
         if (u >= 1) { s.move = ''; cs.pos.copy(s.pos0); cs.look.copy(s.look0); cs.fov = s.fov0; }
         break;
       }
-      case 'crash':
+      case 'crash': {   // snaps onto the face
+        const e2 = EASE.out(u);
         cs.pos.copy(s.pos0); cs.look.copy(s.aim);
-        cs.fov = s.fov0 + (s.a1 - s.fov0) * EASE.out(u);
+        if (s.subj != null && aimInto(t5, s.subj, 'CLOSE', cur)) cs.look.lerp(t5, e2);
+        cs.fov = s.fov0 + (s.a1 - s.fov0) * e2;
         break;
+      }
       case 'glide':
         cs.pos.lerpVectors(s.start.pos, s.end.pos, k); cs.look.lerpVectors(s.start.look, s.end.look, k);
         cs.fov = s.start.fov + (s.end.fov - s.start.fov) * k;
