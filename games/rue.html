@@ -1928,6 +1928,1174 @@ Object.assign(ANIMS, (() => {
   return A;
 })());
 
+// ============================================================ WORLD (ENGINE-B1)
+// Sets (one THREE.Scene each, the fixed light rig, env lerps, LRU of two live sets), actors (pooled rigs,
+// blob shadows, moves, anims, tics), the player (modern/tank, colliders, follower breadcrumbs), gameplay
+// cameras (zones + fixed/pan/rail/push, overrides), the cutscene camera (frame(), shots, moves),
+// split screen and time-lapse. Update/render paths only write into preallocated temporaries.
+
+const { world, cam, frame, player } = (() => {
+  const TAU = Math.PI * 2, DEG = Math.PI / 180;
+  const V = () => new THREE.Vector3();
+  const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const smooth = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u));
+  const EASE = { linear: (u) => u, in: (u) => u * u * u, out: (u) => 1 - (1 - u) ** 3 };
+  const angTo = (a, b) => { let d = (b - a) % TAU; if (d > Math.PI) d -= TAU; else if (d < -Math.PI) d += TAU; return d; };
+  const damp = (rate, dt) => 1 - Math.exp(-rate * dt);
+  const skipping = () => typeof flow !== 'undefined' && flow.skipping;
+  const settle = (o, k) => { const r = o[k]; o[k] = null; if (r) r(); };
+  const t1 = V(), t2 = V(), t3 = V(), t4 = V(), t5 = V(), tc = new THREE.Color(), size2 = new THREE.Vector2(), box3 = new THREE.Box3();
+
+  const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.05, 600);
+  const camR = new THREE.PerspectiveCamera(40, 1, 0.05, 600);   // right half of a split
+
+  // ------------------------------------------------------------ sets
+  const live = new Map();          // setId -> entry, oldest first (LRU)
+  let cur = null, splitE = null;
+
+  const envNew = () => ({ bg: new THREE.Color(0x808080), fog: new THREE.Color(0x808080), dens: 0.01, hs: new THREE.Color(), hg: new THREE.Color(0x444444),
+    hi: 1, dc: new THREE.Color(), di: 1, dp: V().set(5, 10, 5), sc: new THREE.Color(), si: 0, sp: false, rain: 0 });
+  function envCopy(o, s) {
+    o.bg.copy(s.bg); o.fog.copy(s.fog); o.dens = s.dens; o.hs.copy(s.hs); o.hg.copy(s.hg); o.hi = s.hi;
+    o.dc.copy(s.dc); o.di = s.di; o.dp.copy(s.dp); o.sc.copy(s.sc); o.si = s.si; o.sp = s.sp; o.rain = s.rain; return o;
+  }
+  // rain amount when a preset doesn't say: rainy sets rain except in 'sun'; any preset named *rain* rains
+  const rainFor = (def, name) => (name === 'sun' ? 0 : (def.ambience && def.ambience.rain) || /rain/.test(name) ? 1 : 0);
+  function envFill(o, p, name, e) {   // o already holds the base; the preset overrides what it names
+    if (p.bg != null) o.bg.set(p.bg);
+    if (p.fog) { o.fog.set(p.fog[0]); if (p.fog[1] != null) o.dens = p.fog[1]; }
+    if (p.hemi) { o.hs.set(p.hemi[0]); if (p.hemi[1] != null) o.hg.set(p.hemi[1]); if (p.hemi[2] != null) o.hi = p.hemi[2]; }
+    if (p.dir) { o.dc.set(p.dir[0]); if (p.dir[1] != null) o.di = p.dir[1]; if (p.dir[2]) o.dp.fromArray(p.dir[2]); }
+    o.sp = !!p.spot; if (p.spot) { o.sc.set(p.spot[0]); o.si = p.spot[1] ?? 0; }
+    o.rain = p.rain ?? (name ? rainFor(e.def, name) : o.rain);
+    return o;
+  }
+  function envLerp(o, a, b, k) {
+    o.bg.lerpColors(a.bg, b.bg, k); o.fog.lerpColors(a.fog, b.fog, k); o.dens = a.dens + (b.dens - a.dens) * k;
+    o.hs.lerpColors(a.hs, b.hs, k); o.hg.lerpColors(a.hg, b.hg, k); o.hi = a.hi + (b.hi - a.hi) * k;
+    o.dc.lerpColors(a.dc, b.dc, k); o.di = a.di + (b.di - a.di) * k; o.dp.lerpVectors(a.dp, b.dp, k);
+    o.sc.lerpColors(a.sc, b.sc, k); o.si = a.si + (b.si - a.si) * k; o.sp = b.sp; o.rain = a.rain + (b.rain - a.rain) * k;
+  }
+  function envApply(e, s) {
+    e.scene.background.copy(s.bg); e.scene.fog.color.copy(s.fog); e.scene.fog.density = s.dens;
+    e.hemi.color.copy(s.hs); e.hemi.groundColor.copy(s.hg); e.hemi.intensity = s.hi;
+    e.dir.color.copy(s.dc); e.dir.intensity = s.di; e.dir.position.copy(s.dp);
+    if (s.sp) { e.spot.color.copy(s.sc); e.spot.intensity = s.si; }
+    if (e.rain) { e.rain.uniforms.uAmount.value = clamp(s.rain, 0, 1); e.rain.visible = s.rain > 0.01; }
+  }
+  function envSet(e, p, dur = 0) {
+    if (!e) return Promise.resolve();
+    const name = typeof p === 'string' ? p : null, pr = name ? e.def.env && e.def.env[name] : p;
+    if (!pr) { testLog('world.env: no preset ' + p + ' in ' + e.id); return Promise.resolve(); }
+    settle(e, 'envRes');
+    if (name) e.envName = e.ctx.env = name;
+    envCopy(e.from, e.env); envFill(envCopy(e.to, e.env), pr, name, e);
+    if (!(dur > 0) || skipping()) { e.envDur = 0; envEnd(e); return Promise.resolve(); }
+    e.envT = 0; e.envDur = dur;
+    return new Promise((r) => { e.envRes = r; });
+  }
+  function envEnd(e) {
+    const wet = e.env.rain > 0;
+    envCopy(e.env, e.to); envApply(e, e.env);
+    if ((e.env.rain > 0) !== wet && e === cur) ambience(e);
+  }
+  function envTick(e, dt) {
+    if (!(e.envDur > 0)) return;
+    e.envT += dt;
+    if (e.envT >= e.envDur) { e.envDur = 0; envEnd(e); settle(e, 'envRes'); return; }
+    envLerp(e.env, e.from, e.to, smooth(e.envT / e.envDur)); envApply(e, e.env);
+  }
+  function ambience(e) {
+    if (typeof AUDIO === 'undefined') return;
+    const a = e.def.ambience || {};
+    if (AUDIO.ambience) AUDIO.ambience({ rain: e.env.rain > 0, loops: a.loops || [] });
+    if (AUDIO.setRoom) AUDIO.setRoom(a.room || 'none');
+  }
+
+  // pooled smoke/spark puffs: one Points per set (in the scene from build, so its program is warmed)
+  const PUFF = 64;
+  let puffMat = null;
+  function makePuff() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(PUFF * 3), 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(PUFF * 4), 4).setUsage(THREE.DynamicDrawUsage));
+    puffMat ||= new THREE.PointsMaterial({ size: 0.22, vertexColors: true, transparent: true, depthWrite: false,
+      map: canvasTex(64, 64, (c, w, h) => {
+        const gr = c.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+        gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.6, 'rgba(255,255,255,0.5)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+        c.fillStyle = gr; c.fillRect(0, 0, w, h);
+      }, { key: 'puff' }) });
+    const pts = new THREE.Points(g, puffMat);
+    pts.frustumCulled = false; pts.visible = false; pts.name = 'puff';
+    pts.userData = { vel: new Float32Array(PUFF * 3), life: new Float32Array(PUFF), max: new Float32Array(PUFF), g: new Float32Array(PUFF), next: 0 };
+    return pts;
+  }
+  function puffTick(e, dt) {
+    const pz = e.puff;
+    if (!pz.visible) return;
+    const u = pz.userData, pos = pz.geometry.attributes.position, col = pz.geometry.attributes.color, pa = pos.array, ca = col.array;
+    let alive = 0;
+    for (let j = 0; j < PUFF; j++) {
+      if (u.life[j] <= 0) continue;
+      if ((u.life[j] -= dt) <= 0) { ca[j * 4 + 3] = 0; continue; }
+      alive++;
+      const v = u.vel, k = 1 - 1.6 * dt;
+      v[j * 3 + 1] -= u.g[j] * dt; v[j * 3] *= k; v[j * 3 + 1] *= k; v[j * 3 + 2] *= k;
+      pa[j * 3] += v[j * 3] * dt; pa[j * 3 + 1] += v[j * 3 + 1] * dt; pa[j * 3 + 2] += v[j * 3 + 2] * dt;
+      ca[j * 4 + 3] = 0.85 * u.life[j] / u.max[j];
+    }
+    pos.needsUpdate = true; col.needsUpdate = true;
+    if (!alive) pz.visible = false;
+  }
+
+  function build(id) {
+    const def = SETS[id];
+    if (!def) throw new Error('RUE: no SETS.' + id);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(); scene.fog = new THREE.FogExp2(0x808080, 0.01);
+    // the fixed light rig: never add/remove lights later (shader recompiles), only change values
+    const hemi = new THREE.HemisphereLight(), dir = new THREE.DirectionalLight(), spot = new THREE.SpotLight(0xffffff, 0, 30, 0.33, 0.5, 1.5);
+    spot.name = 'torch';
+    scene.add(hemi, dir, spot, spot.target);
+    const group = def.build();
+    scene.add(group);
+    const props = {};
+    group.traverse((o) => { if (o.name && !props[o.name]) props[o.name] = o; });
+    const anchors = {};
+    for (const k in def.anchors || {}) {
+      const a = def.anchors[k], at = Array.isArray(a) ? a : a.at;
+      anchors[k] = { at: V().fromArray(at), from: a.from ? V().fromArray(a.from) : null, fov: a.fov ?? null };
+    }
+    const names = Object.keys(def.env || {}), amb = def.ambience || {};
+    let rain = props.rain && props.rain.uniforms ? props.rain : null;
+    if (!rain && (amb.rain || names.some((n) => /rain/.test(n) || def.env[n].rain > 0))) {
+      const r = typeof amb.rain === 'object' ? amb.rain : {};
+      let bx = r.box;
+      if (!bx) { // walkable area (zones) + a margin, else the set's bounds, capped
+        if (def.zones && def.zones.length) { bx = [1e9, 1e9, -1e9, -1e9]; for (const z of def.zones) { bx[0] = Math.min(bx[0], z.box[0]); bx[1] = Math.min(bx[1], z.box[1]); bx[2] = Math.max(bx[2], z.box[2]); bx[3] = Math.max(bx[3], z.box[3]); } bx = [bx[0] - 12, bx[1] - 12, bx[2] + 12, bx[3] + 12]; }
+        else { box3.setFromObject(group); bx = [Math.max(box3.min.x, -30), Math.max(box3.min.z, -30), Math.min(box3.max.x, 30), Math.min(box3.max.z, 30)]; }
+      }
+      const area = (bx[2] - bx[0]) * (bx[3] - bx[1]);
+      rain = makeRain({ box: bx, top: r.top ?? 12, bottom: r.bottom ?? 0, count: r.count ?? Math.round(clamp(area * 2.5, 1500, 6000)) });
+      scene.add(rain);
+    }
+    const e = { id, def, scene, group, props, anchors, hemi, dir, spot, rain, puff: makePuff(),
+      firstCam: Object.keys(def.cams || {})[0] || '',
+      env: envNew(), from: envNew(), to: envNew(), envName: '', envT: 0, envDur: 0, envRes: null,
+      ctx: { t: 0, player: null, running: false, env: '', props } };
+    scene.add(e.puff);
+    envApply(e, e.env);
+    if (names.length) envSet(e, names[0]);
+    return e;
+  }
+
+  const TEXK = ['map', 'emissiveMap', 'alphaMap', 'lightMap', 'aoMap', 'bumpMap', 'normalMap', 'specularMap'];
+  function texUp(o) {
+    const m = o.material;
+    if (!m) return;
+    for (const x of Array.isArray(m) ? m : [m]) {
+      for (const k of TEXK) if (x[k] && x[k].isTexture) renderer.initTexture(x[k]);
+      if (x.uniforms) for (const u in x.uniforms) { const v = x.uniforms[u].value; if (v && v.isTexture) renderer.initTexture(v); }
+    }
+  }
+  function upload(e) { renderer.compile(e.scene, camera); e.scene.traverse(texUp); }
+  function disposeGeo(e) { e.scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); }
+  function retire(e) {
+    for (let i = A.length - 1; i >= 0; i--) if (A[i].set === e) despawnA(A[i]);
+    settle(e, 'envRes');
+    disposeGeo(e);                  // materials and textures stay cached (ART) so programs survive
+    live.delete(e.id);
+  }
+  function trim() {
+    for (const e of live.values()) { if (live.size <= 2) break; if (e !== cur && e !== splitE) retire(e); }
+  }
+  function ensure(id) {             // live entry for id (builds it), marked most recently used
+    let e = live.get(id);
+    if (e) { live.delete(id); live.set(id, e); return e; }
+    e = build(id); live.set(id, e); upload(e); trim();
+    return e;
+  }
+  function showE(e) {
+    cur = e; W.set = e.def; W.setId = e.id;
+    G.name = ''; snap = true;          // (the flow sets AUDIO.ambience/room after world.load)
+  }
+
+  // ------------------------------------------------------------ actors
+  const actors = new Map(), A = [], pool = {};
+  const ONE = { nod: 0.9, shake: 1, shrug: 1.2, give: 1.4, lanyard_on: 2, knock: 1.2, glance: 1.3, stand: 1 };  // one-shots (ART defaults)
+  const LOCO = { walk: 1, run: 1, carry: 1, swagger: 1, turn: 1 };
+  let kind = '';                    // what resolveWhere last found: mark | actor | anchor | point
+
+  function resolveWhere(w, out, e = cur) {   // -> rotY (NaN when the place has none)
+    kind = 'point';
+    if (w == null) { out.set(0, 0, 0); return NaN; }
+    if (Array.isArray(w)) { if (w.length === 2) out.set(w[0], 0, w[1]); else out.set(w[0], w[1], w[2]); return w.length > 3 ? w[3] : NaN; }
+    if (w.isVector3) { out.copy(w); return NaN; }
+    const m = e && e.def.marks && e.def.marks[w];
+    if (m) { kind = 'mark'; out.set(m[0], m[1] || 0, m[2]); return m[3] ?? NaN; }
+    const a = actors.get(w);
+    if (a) { kind = 'actor'; out.copy(a.pos); return NaN; }
+    const an = e && e.anchors[w];
+    if (an) { kind = 'anchor'; out.copy(an.at); return NaN; }
+    testLog('world: unknown place ' + w);
+    out.set(0, 0, 0); return NaN;
+  }
+  function pointOf(x, out, e = cur) {        // a thing to look at: actor eyes, anchor, mark (chest height), [x,y,z]
+    if (x == null) return false;
+    const a = typeof x === 'string' && actors.get(x);
+    if (a) { a.eyePos(out); return true; }
+    if (typeof x === 'string' && e && e.anchors[x]) { out.copy(e.anchors[x].at); return true; }
+    resolveWhere(x, out, e);
+    if (kind === 'mark') out.y += 1.3;
+    return true;
+  }
+  const floorAt = (e, x, z, y) => (e && e.def.floor ? e.def.floor(x, z) : y);
+  const setAnim = (a, name, restart) => { if (restart) { a.anim = a.poseName = name; a.poseT = 0; } else if (a.anim !== name) a.anim = name; };
+  const isUpper = (n) => n !== 'idle' && ANIMS[n] && ANIMS[n].upper && !ONE[n];
+
+  function newActor(id, look, rig) {
+    let shadow = rig.root.getObjectByName('blob');
+    if (!shadow) { shadow = blobShadow(); rig.root.add(shadow); }
+    const hs = rig.d && rig.d.hs ? rig.d.hs : 1;
+    const a = {
+      id, look, rig, root: rig.root, pos: rig.root.position, rotY: 0, anim: 'idle', expr: 'neutral', carry: null, follow: null,
+      mood: null, habit: null, glanceAt: 'chase', walkAnim: look === 'rue19' ? 'swagger' : 'walk', set: null, shadow,
+      p: { dur: 0, speed: 1, walk: false, still: false, yaw: 0.9, h: undefined },
+      poseName: '', poseT: 0, ret: 'idle', back: false, playT: -1, playRes: null, glanceT: 2 + Math.random() * 4,
+      mv: { on: false, to: V(), speed: 0, face: NaN, loco: 'walk', y0: 0, d0: 1, res: null },
+      fc: { on: false, a0: 0, a1: 0, t: 0, dur: 0.3, res: null },
+      held: null, heldBig: false, prev: V(), prevRot: 0, keep: V(),
+    };
+    Object.defineProperty(a, 'visible', { get: () => a.root.visible, set: (v) => { a.root.visible = !!v; } });
+    a.eyePos = (v) => { a.root.updateMatrixWorld(true); return a.rig.parts.head.localToWorld(v.set(0, 0.134 * hs, 0.118 * hs)); };
+    a.headPos = (v) => { a.root.updateMatrixWorld(true); return a.rig.parts.head.localToWorld(v.set(0, 0.13 * hs, 0.03)); };
+    a.setExpr = (name) => { a.expr = name; a.rig.face.set(name); };
+    a.place = (where) => {
+      stopMove(a);
+      const r = resolveWhere(where, a.pos, a.set);
+      if (!isNaN(r)) a.rotY = r;
+      a.prev.copy(a.pos); a.prevRot = a.rotY; a.root.rotation.y = a.rotY;
+      if (P.fol === a || P.actor === a) crumbN = 0;
+    };
+    a.moveTo = (where, o = {}) => {
+      const m = a.mv;
+      settle(m, 'res'); settle(a.fc, 'res'); a.fc.on = false;
+      const rot = resolveWhere(where, m.to, a.set);
+      t1.set(m.to.x - a.pos.x, 0, m.to.z - a.pos.z);
+      if (kind === 'actor' || kind === 'anchor') {   // walk up to it and face it
+        const d = t1.length(), stop = kind === 'actor' ? 0.9 : 0.6;
+        m.face = d > 0.01 ? Math.atan2(t1.x, t1.z) : NaN;
+        const k = d > stop ? 1 - stop / d : 0;
+        m.to.set(a.pos.x + t1.x * k, a.pos.y, a.pos.z + t1.z * k);
+      } else m.face = o.face === false ? NaN : rot;
+      const run = !!o.run;
+      m.speed = o.speed || (a.heldBig ? CONFIG.carry : run ? CONFIG.run : CONFIG.walk);
+      m.loco = a.heldBig ? 'carry' : run ? 'run' : a.walkAnim;
+      m.y0 = a.pos.y; m.d0 = Math.max(0.001, Math.hypot(m.to.x - a.pos.x, m.to.z - a.pos.z));
+      if (skipping() || m.d0 < 0.02) {
+        a.pos.set(m.to.x, floorAt(a.set, m.to.x, m.to.z, m.to.y), m.to.z);
+        if (!isNaN(m.face)) a.rotY = m.face;
+        a.prev.copy(a.pos); a.prevRot = a.rotY;
+        return Promise.resolve();
+      }
+      m.on = true;
+      return new Promise((r) => { m.res = r; });
+    };
+    a.face = (target, dur = 0.3) => {
+      let rot = a.rotY;
+      if (typeof target === 'number') rot = target;
+      else {
+        resolveWhere(target, t1, a.set);
+        if (Math.hypot(t1.x - a.pos.x, t1.z - a.pos.z) > 0.01) rot = Math.atan2(t1.x - a.pos.x, t1.z - a.pos.z);
+      }
+      return startFace(a, rot, dur);
+    };
+    a.play = (anim, o = {}) => {
+      settle(a, 'playRes');
+      const one = ONE[anim], back = !!one || o.loop === false, dur = o.dur ?? one ?? 0;
+      if (back) a.ret = anim === 'stand' ? 'idle' : ONE[a.anim] || LOCO[a.anim] ? (a.back ? a.ret : 'idle') : a.anim;
+      a.p.dur = o.dur || 0; a.p.speed = o.speed ?? 1; a.p.still = !!o.still;
+      if (o.h != null) a.p.h = o.h;
+      if (o.yaw != null) a.p.yaw = o.yaw;
+      a.back = back;
+      if (skipping()) { a.back = false; a.playT = -1; setAnim(a, back ? a.ret : anim, true); return Promise.resolve(); }
+      setAnim(a, anim, true);
+      a.playT = back ? (dur || 1.2) : dur > 0 ? dur : -1;
+      if (a.playT > 0) return new Promise((r) => { a.playRes = r; });
+      return Promise.resolve();
+    };
+    a.hold = (obj, hand = 'R') => {
+      if (a.held) {   // put the current one back where it came from
+        const o = a.held, h = o.userData.home;
+        h.parent.add(o); o.position.copy(h.pos); o.quaternion.copy(h.quat);
+        a.held = null; a.carry = null;
+        if (a.heldBig && P.actor === a) P.speedMul = 1;
+        a.heldBig = false;
+      }
+      const o = typeof obj === 'string' ? W.prop(obj) : obj;
+      if (!o) return;
+      if (!o.userData.home) o.userData.home = { parent: o.parent, pos: o.position.clone(), quat: o.quaternion.clone() };
+      if (o.parent) o.parent.remove(o);
+      o.position.set(0, 0, 0); o.quaternion.identity(); o.updateMatrixWorld(true);
+      box3.setFromObject(o); box3.getCenter(t1); box3.getSize(t2);
+      a.heldBig = Math.max(t2.x, t2.y, t2.z) > 0.45;
+      if (a.heldBig) { a.root.add(o); o.position.set(-t1.x, 1.0 - t1.y, 0.45 - t1.z); if (P.actor === a) P.speedMul = 0.6; }
+      else { (a.rig.attach['grip' + hand] || a.rig.parts['hand' + hand]).add(o); o.position.set(-t1.x, -t1.y, -t1.z); }
+      a.held = o; a.carry = o.name || true;
+    };
+    return a;
+  }
+  function stopMove(a) { a.mv.on = false; settle(a.mv, 'res'); a.fc.on = false; settle(a.fc, 'res'); if (LOCO[a.anim]) setAnim(a, 'idle'); a.p.walk = false; }
+  function startFace(a, rot, dur) {
+    const f = a.fc;
+    settle(f, 'res');
+    const d = angTo(a.rotY, rot);
+    if (Math.abs(d) < 0.01 || skipping() || !(dur > 0)) { a.rotY = a.rotY + d; f.on = false; return Promise.resolve(); }
+    f.a0 = a.rotY; f.a1 = a.rotY + d; f.t = 0; f.dur = dur; f.on = true;
+    return new Promise((r) => { f.res = r; });
+  }
+  function glance(a) {
+    a.glanceT = 3 + Math.random() * 4;
+    const c = actors.get(a.glanceAt);
+    if (!c || c === a || c.set !== a.set) return;
+    a.p.yaw = clamp(angTo(a.rotY, Math.atan2(c.pos.x - a.pos.x, c.pos.z - a.pos.z)), -1.3, 1.3);
+    a.p.dur = 0; a.ret = 'idle'; a.back = true; a.playT = ONE.glance;
+    setAnim(a, 'glance', true);
+  }
+  function poseOf(a) {
+    if (a.anim === 'idle') {
+      if (a.fc.on && !a.rig.seated && Math.abs(a.fc.a1 - a.fc.a0) > 0.4) return 'turn';
+      if (a.mood === 'anxious') return 'lanyard';
+    }
+    return a.anim;
+  }
+  function actorTick(a, dt) {
+    const m = a.mv, e = a.set;
+    if (m.on) {
+      const dx = m.to.x - a.pos.x, dz = m.to.z - a.pos.z, d = Math.hypot(dx, dz), step = m.speed * dt;
+      if (isUpper(a.anim)) { a.p.walk = true; a.p.speed = m.speed / CONFIG.walk; }
+      else { setAnim(a, m.loco); a.p.speed = m.speed / (m.loco === 'run' ? CONFIG.run : m.loco === 'carry' ? CONFIG.carry : CONFIG.walk); }
+      if (d <= step) {
+        a.pos.x = m.to.x; a.pos.z = m.to.z; a.pos.y = floorAt(e, a.pos.x, a.pos.z, m.to.y);
+        m.on = false; a.p.walk = false;
+        if (LOCO[a.anim]) setAnim(a, 'idle');
+        const res = m.res; m.res = null;
+        if (!isNaN(m.face)) { startFace(a, m.face, 0.3); a.fc.res = res; } else if (res) res();
+      } else {
+        a.pos.x += dx / d * step; a.pos.z += dz / d * step;
+        a.pos.y = floorAt(e, a.pos.x, a.pos.z, m.y0 + (m.to.y - m.y0) * (1 - (d - step) / m.d0));
+        a.rotY += angTo(a.rotY, Math.atan2(dx, dz)) * Math.min(1, 10 * dt);
+      }
+    }
+    const f = a.fc;
+    if (f.on) {
+      f.t += dt;
+      const k = smooth(f.t / f.dur);
+      a.rotY = f.a0 + (f.a1 - f.a0) * k;
+      if (f.t >= f.dur) { f.on = false; settle(f, 'res'); }
+    }
+    if (a.playT > 0 && (a.playT -= dt) <= 0) {
+      if (a.back) { a.back = false; setAnim(a, a.ret || 'idle'); }
+      a.p.dur = 0; a.playT = -1; settle(a, 'playRes');
+    }
+    if (a.habit === 'glance' && a.anim === 'idle' && !m.on && !a.playRes && (a.glanceT -= dt) <= 0) glance(a);
+    const n = poseOf(a);
+    if (n !== a.poseName) { a.poseName = n; a.poseT = 0; } else a.poseT += dt;
+    a.rig.update(dt);
+  }
+  function despawnA(a) {
+    if (a.held) a.hold(null);
+    stopMove(a); settle(a, 'playRes');
+    a.rig.talk(false);
+    if (a.root.parent) a.root.parent.remove(a.root);
+    actors.delete(a.id); A.splice(A.indexOf(a), 1);
+    if (P.actor === a) P.actor = null;
+    if (P.fol === a) P.fol = null;
+    a.set = null; a.root.visible = true; a.rig.seated = false;
+    (pool[a.look] ||= []).push(a.rig);
+  }
+  function spawn(id, where, o = {}) {
+    const e = o.set ? ensure(o.set) : cur;
+    if (!e) throw new Error('RUE: world.spawn before world.load');
+    const look = o.look || id;
+    let a = actors.get(id);
+    if (a && a.look !== look) { despawnA(a); a = null; }
+    if (!a) {
+      const rig = (pool[look] && pool[look].pop()) || buildCharacter(look);
+      a = newActor(id, look, rig);
+      actors.set(id, a); A.push(a);
+      a.setExpr((LOOKS[look] && LOOKS[look].expr) || 'neutral');
+    }
+    if (a.set !== e) { e.scene.add(a.root); a.set = e; }
+    a.visible = true;
+    setAnim(a, 'idle', true); a.back = false; a.playT = -1; settle(a, 'playRes');
+    a.place(where);
+    return a;
+  }
+
+  // ------------------------------------------------------------ player + follower
+  const CRN = 128, CR = new Float32Array(CRN * 3);
+  let crumbH = 0, crumbN = 0;       // ring buffer of the leader's positions (head = next write)
+  const crumb = (i, out) => out.set(CR[i * 3], CR[i * 3 + 1], CR[i * 3 + 2]);   // i = ring index
+  const P = {
+    actor: null, enabled: false, speedMul: 1, running: false, fol: null, frozenT: 0, ctrlYaw: 0,
+    control(id) {
+      const a = id ? actors.get(id) : null;
+      if (P.actor && P.actor !== a && LOCO[P.actor.anim]) setAnim(P.actor, 'idle');
+      P.actor = a || null;
+      if (a) { if (P.fol === a) P.fol = null; a.follow = null; P.speedMul = a.heldBig ? 0.6 : 1; }
+      crumbN = 0;
+    },
+    follower(id) {
+      if (P.fol) P.fol.follow = null;
+      P.fol = id ? actors.get(id) || null : null;
+      if (P.fol) P.fol.follow = P.actor ? P.actor.id : null;
+      crumbN = 0;
+    },
+    frozen(sec) { P.frozenT = Math.max(P.frozenT, sec || 0); },
+  };
+  function collide(a, x, z, e) {
+    const r = CONFIG.radius, cl = e.def.colliders;
+    for (let it = 0; it < 2; it++) {
+      if (cl) for (let i = 0; i < cl.length; i++) {
+        const b = cl[i], cx = clamp(x, b[0], b[2]), cz = clamp(z, b[1], b[3]), dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz;
+        if (d2 >= r * r) continue;
+        if (d2 > 1e-8) { const d = Math.sqrt(d2), k = (r - d) / d; x += dx * k; z += dz * k; }
+        else {   // centre inside the box: out the nearest side
+          const l = x - b[0], rr = b[2] - x, t = z - b[1], bo = b[3] - z, m = Math.min(l, rr, t, bo);
+          if (m === l) x = b[0] - r; else if (m === rr) x = b[2] + r; else if (m === t) z = b[1] - r; else z = b[3] + r;
+        }
+      }
+      for (let i = 0; i < A.length; i++) {
+        const o = A[i];
+        if (o === a || o.set !== e || !o.root.visible || o === P.fol) continue;
+        const dx = x - o.pos.x, dz = z - o.pos.z, d2 = dx * dx + dz * dz, rr = r * 2;
+        if (d2 < rr * rr && d2 > 1e-8) { const d = Math.sqrt(d2), k = (rr - d) / d; x += dx * k; z += dz * k; }
+      }
+    }
+    a.pos.x = x; a.pos.z = z; a.pos.y = floorAt(e, x, z, a.pos.y);
+  }
+  function playerTick(dt) {
+    const a = P.actor;
+    P.running = false;
+    if (!a || !P.enabled || a.set !== cur || a.mv.on) { if (a && LOCO[a.anim] && !a.mv.on) setAnim(a, 'idle'); return; }
+    const mx = input.move.x, my = input.move.y, tank = options.controls === 'tank';
+    if (P.frozenT > 0) { P.frozenT -= dt; if (LOCO[a.anim]) setAnim(a, 'idle'); return; }
+    let dx = 0, dz = 0, mag = 0, turning = false;
+    if (tank) {
+      if (Math.abs(mx) > 0.2) { a.rotY -= mx * CONFIG.turn * dt; turning = true; }
+      if (Math.abs(my) > 0.2) { const s = my > 0 ? 1 : -0.6; dx = Math.sin(a.rotY) * s; dz = Math.cos(a.rotY) * s; mag = Math.abs(my); }
+    } else {
+      mag = Math.min(1, Math.hypot(mx, my));
+      if (mag < 0.15) { P.ctrlYaw = Math.atan2(cs.look.x - cs.pos.x, cs.look.z - cs.pos.z); mag = 0; }   // re-read the camera only while released
+      else {
+        const fx = Math.sin(P.ctrlYaw), fz = Math.cos(P.ctrlYaw), n = Math.hypot(mx, my);
+        dx = (fx * my - fz * mx) / n; dz = (fz * my + fx * mx) / n;
+        a.rotY += angTo(a.rotY, Math.atan2(dx, dz)) * Math.min(1, 14 * dt);
+      }
+    }
+    if (mag > 0) {
+      const run = input.run && !a.heldBig && !(tank && my < 0);
+      const sp = (run ? CONFIG.run : CONFIG.walk) * P.speedMul * mag;
+      collide(a, a.pos.x + dx * sp * dt, a.pos.z + dz * sp * dt, cur);
+      const loco = a.heldBig ? 'carry' : run ? 'run' : a.walkAnim;
+      setAnim(a, loco); a.p.walk = false;
+      a.p.speed = sp / (run ? CONFIG.run : a.heldBig ? CONFIG.carry : CONFIG.walk);
+      P.running = run;
+    } else if (turning) { setAnim(a, 'turn'); }
+    else if (LOCO[a.anim]) setAnim(a, 'idle');
+  }
+  function offCamera(a) {
+    t5.set(a.pos.x, a.pos.y + 1, a.pos.z).project(camera);
+    return t5.z > 1 || Math.abs(t5.x) > 1.05 || Math.abs(t5.y) > 1.05;
+  }
+  function followerTick(dt) {
+    const f = P.fol, L = P.actor;
+    if (!f || !L || f === L || f.set !== L.set || f.mv.on || !P.enabled) return;
+    const e = L.set;
+    // breadcrumbs: every 0.35 m the leader moves
+    const last = (crumbH - 1 + CRN) % CRN;
+    if (!crumbN || Math.hypot(L.pos.x - CR[last * 3], L.pos.z - CR[last * 3 + 2]) > 0.35) {
+      CR[crumbH * 3] = L.pos.x; CR[crumbH * 3 + 1] = L.pos.y; CR[crumbH * 3 + 2] = L.pos.z;
+      crumbH = (crumbH + 1) % CRN; crumbN = Math.min(CRN, crumbN + 1);
+    }
+    const dL = Math.hypot(f.pos.x - L.pos.x, f.pos.z - L.pos.z);
+    if (dL > 8 && offCamera(f)) {   // fell behind off-screen: reappear on the trail ~1.5 m behind
+      let i = (crumbH - 1 + CRN) % CRN, n = crumbN, acc = 0;
+      crumb(i, t4).copy(L.pos);
+      while (n-- > 1 && acc < 1.5) { const j = (i - 1 + CRN) % CRN; acc += Math.hypot(CR[j * 3] - CR[i * 3], CR[j * 3 + 2] - CR[i * 3 + 2]); i = j; }
+      if (crumbN > 1) crumb(i, t4); else t4.set(L.pos.x - Math.sin(L.rotY) * 1.4, L.pos.y, L.pos.z - Math.cos(L.rotY) * 1.4);
+      f.pos.copy(t4); f.prev.copy(t4); f.rotY = f.prevRot = L.rotY; crumbN = 0;
+      return;
+    }
+    if (dL < 1.3) { if (LOCO[f.anim]) setAnim(f, 'idle'); return; }
+    let tail = (crumbH - crumbN + CRN) % CRN;
+    while (crumbN > 1 && Math.hypot(f.pos.x - CR[tail * 3], f.pos.z - CR[tail * 3 + 2]) < 0.3) { tail = (tail + 1) % CRN; crumbN--; }
+    const tx = crumbN ? CR[tail * 3] : L.pos.x, tz = crumbN ? CR[tail * 3 + 2] : L.pos.z;
+    const dx = tx - f.pos.x, dz = tz - f.pos.z, d = Math.hypot(dx, dz);
+    if (d < 1e-4) return;
+    const run = dL > 3.5 || P.running, sp = run ? CONFIG.run : CONFIG.walk, step = Math.min(d, sp * dt);
+    f.pos.x += dx / d * step; f.pos.z += dz / d * step; f.pos.y = floorAt(e, f.pos.x, f.pos.z, f.pos.y);
+    f.rotY += angTo(f.rotY, Math.atan2(dx, dz)) * Math.min(1, 10 * dt);
+    setAnim(f, run ? 'run' : f.walkAnim); f.p.speed = 1; f.p.walk = false;
+  }
+  // Torchlight: while world.torch is on it rides in the player's right hand, aimed ahead at the ground
+  function torchTick(e) {
+    const s = e.spot, a = P.actor;
+    if (s.intensity <= 0 || shotAt.jarvis || !W.torchAuto || !a || a.set !== e) return;
+    const fx = Math.sin(a.rotY), fz = Math.cos(a.rotY);
+    s.position.set(a.pos.x + fx * 0.3 - fz * 0.18, a.pos.y + 1.25, a.pos.z + fz * 0.3 + fx * 0.18);
+    s.target.position.set(a.pos.x + fx * 7, a.pos.y + 0.1, a.pos.z + fz * 7);
+  }
+
+  // ------------------------------------------------------------ framing: frame(subjects, size, opts)
+  const F = { pos: V(), look: V(), fov: 40, up: V().set(0, 0, -1) };
+  const SP = [], SF = [], SA = [];
+  for (let i = 0; i < 8; i++) { SP.push(V()); SF.push(V()); SA.push(null); }
+  let nS = 0, nAct = 0, feetY = 0, eyeY = 0;
+  const DY = { ECU: -0.03, CLOSE: -0.08, MID: -0.35, TWO: -0.3, THREE: -0.35, TOP: 0 };
+  const C25 = Math.cos(25 * DEG), S25 = Math.sin(25 * DEG), C20 = Math.cos(20 * DEG), S20 = Math.sin(20 * DEG);
+  const FO = { angle: null, side: null, dist: null, height: 0, fov: null, offset: 0, facing: false };  // frame options, filled per call
+
+  function addSubj(x, e) {
+    if (nS >= 8 || x == null) return;
+    SA[nS] = null;
+    if (typeof x !== 'string') { if (x.isVector3) SP[nS].copy(x); else SP[nS].set(x[0], x[1], x[2]); SF[nS++].set(0, 0, 0); return; }
+    const a = actors.get(x);
+    if (a) { a.eyePos(SP[nS]); SF[nS].set(Math.sin(a.rotY), 0, Math.cos(a.rotY)); SA[nS] = a; feetY += a.pos.y; eyeY += SP[nS].y; nS++; nAct++; return; }
+    const an = e && e.anchors[x];
+    if (an) { SP[nS].copy(an.at); if (an.from) SF[nS].set(an.from.x - an.at.x, 0, an.from.z - an.at.z).normalize(); else SF[nS].set(0, 0, 0); nS++; return; }
+    const m = e && e.def.marks && e.def.marks[x];
+    if (m) { SP[nS].set(m[0], (m[1] || 0) + 1.55, m[2]); SF[nS].set(Math.sin(m[3] || 0), 0, Math.cos(m[3] || 0)); nS++; return; }
+    testLog('cam: nothing called ' + x);
+  }
+  function gather(on, e) {
+    nS = 0; nAct = 0; feetY = 0; eyeY = 0;
+    if (on == null) { for (let i = 0; i < A.length; i++) if (A[i].set === e && A[i].root.visible) addSubj(A[i].id, e); }
+    else if (Array.isArray(on) && typeof on[0] !== 'number') { for (let i = 0; i < on.length; i++) addSubj(on[i], e); }
+    else addSubj(on, e);
+    if (nAct) { feetY /= nAct; eyeY /= nAct; }
+    return nS;
+  }
+  function aimInto(out, on, size, e) {    // the point a framing looks at
+    if (!gather(on, e)) return 0;
+    out.set(0, 0, 0);
+    for (let i = 0; i < nS; i++) out.add(SP[i]);
+    out.divideScalar(nS);
+    if (nAct) { if (size === 'WIDE') out.y = feetY + 1.0; else out.y += DY[size] ?? -0.3; }
+    return nS;
+  }
+  const inZones = (x, z, zs, pad) => { for (let i = 0; i < zs.length; i++) { const b = zs[i].box; if (x >= b[0] - pad && x <= b[2] + pad && z >= b[1] - pad && z <= b[3] + pad) return true; } return false; };
+  function fitZones(Pp, L, e) {           // keep a computed camera inside the playable space: come closer, open the lens
+    const zs = e && e.def.zones;
+    if (!zs || !zs.length || !inZones(L.x, L.z, zs, 0.6) || inZones(Pp.x, Pp.z, zs, 0.6)) return 1;
+    for (let s = 0.9; s > 0.2; s -= 0.1) {
+      const x = L.x + (Pp.x - L.x) * s, z = L.z + (Pp.z - L.z) * s;
+      if (inZones(x, z, zs, 0.6)) { Pp.set(x, L.y + (Pp.y - L.y) * s, z); return s; }
+    }
+    return 1;
+  }
+  // is someone who isn't in the shot standing between the lens (direction dx,dz, distance D) and the subjects?
+  function blocked(L, dx, dz, D, e) {
+    for (let i = 0; i < A.length; i++) {
+      const a = A[i];
+      if (a.set !== e || !a.root.visible) continue;
+      let sub = false;
+      for (let j = 0; j < nS; j++) if (SA[j] === a) sub = true;
+      if (sub) continue;
+      const ax = a.pos.x - L.x, az = a.pos.z - L.z, t = ax * dx + az * dz;
+      if (t > 0.25 && t < D + 0.3 && Math.abs(ax * dz - az * dx) < 0.45) return true;
+    }
+    return false;
+  }
+  const TURNS = [0, 0.6, -0.6, 1.2, -1.2];
+  const aspectNow = () => { renderer.getSize(size2); return (splitE ? 0.5 : 1) * size2.x / Math.max(1, size2.y); };
+
+  function frameInto(out, on, size, o, e) {
+    size = size || 'MID';
+    const L = out.look, Pp = out.pos;
+    if (!aimInto(L, on, size, e)) { Pp.copy(cs.pos); L.copy(cs.look); out.fov = cs.fov; return false; }
+    const f = t1.set(0, 0, 0);
+    for (let i = 0; i < nS; i++) f.add(SF[i]);
+    if (nS > 1 && !o.facing) {           // groups: look across the line between them
+      t2.set(SP[nS - 1].x - SP[0].x, 0, SP[nS - 1].z - SP[0].z);
+      const len = t2.length();
+      if (len > 0.25) {
+        t3.set(-t2.z / len, 0, t2.x / len);
+        const s = f.dot(t3) / nS;
+        if (s < -0.3) t3.negate();
+        else if (s < 0.3 && (SP[0].x - L.x) * t3.z - (SP[0].z - L.z) * t3.x > 0) t3.negate();   // facing each other: first subject frame-left
+        f.copy(t3);
+      }
+    }
+    if (f.lengthSq() < 0.01) f.set(cs.pos.x - L.x, 0, cs.pos.z - L.z);
+    if (f.lengthSq() < 1e-6) f.set(0, 0, 1);
+    f.normalize();
+    const side = o.side || '';
+    if (side.startsWith('ots:')) {       // over that actor's (right) shoulder, looking at the subject
+      const oa = actors.get(side.slice(4));
+      if (oa) {
+        oa.eyePos(t3);
+        t2.set(t3.x - L.x, 0, t3.z - L.z).normalize();
+        Pp.set(t3.x + t2.x * 0.95 + t2.z * 0.38, t3.y + 0.06 + (o.height || 0), t3.z + t2.z * 0.95 - t2.x * 0.38);
+        L.lerp(t3, 0.12);                  // subject toward the right third, the shoulder on the left
+        out.fov = o.fov ?? CONFIG.fov;
+        return true;
+      }
+    }
+    const d = t2;
+    if (side === 'back') d.copy(f).negate();
+    else if (side === 'left') d.set(f.z, 0, -f.x);
+    else if (side === 'right') d.set(-f.z, 0, f.x);
+    else if (o.angle === 'side') { d.set(f.z, 0, -f.x); if (d.x * (cs.pos.x - L.x) + d.z * (cs.pos.z - L.z) < 0) d.negate(); }   // profile on the camera's side
+    else d.copy(f);
+    const fv = o.fov ?? (size === 'ECU' ? CONFIG.ecuFov : CONFIG.fov), fit = o.dist == null && (size === 'TWO' || size === 'THREE' || (size === 'WIDE' && nS > 1));
+    const top = o.angle === 'top' || size === 'TOP';
+    let D = 0;
+    for (let k = 0; k < TURNS.length; k++) {   // a clean frame: swing round (35°, 70°) if someone else is in the way
+      if (k) { const c = Math.cos(TURNS[k]), sn = Math.sin(TURNS[k]); d.set(t4.x * c + t4.z * sn, 0, -t4.x * sn + t4.z * c); } else t4.copy(d);
+      D = o.dist ?? CONFIG.dist[size] ?? (size === 'TOP' ? 1.5 : CONFIG.dist.MID);
+      if (fit) {                           // fit everyone with a margin
+        const tanH = Math.tan(fv * DEG / 2) * aspectNow(), mg = size === 'WIDE' ? 1 : 0.6;
+        D = size === 'WIDE' ? CONFIG.dist.WIDE : 1.5;
+        for (let i = 0; i < nS; i++) {
+          const x = SP[i].x - L.x, z = SP[i].z - L.z;
+          D = Math.max(D, (Math.abs(x * d.z - z * d.x) + mg) / tanH + (x * d.x + z * d.z));
+        }
+      }
+      if (top || o.facing || !blocked(L, d.x, d.z, D, e)) break;
+      if (k === TURNS.length - 1) { d.copy(t4); k = TURNS.length; D = o.dist ?? (fit ? D : CONFIG.dist[size] ?? CONFIG.dist.MID); }
+    }
+    if (top) { Pp.set(L.x, L.y + D, L.z); out.up.copy(f); }
+    else if (o.angle === 'high') Pp.set(L.x + d.x * D * C25, L.y + D * S25, L.z + d.z * D * C25);
+    else if (o.angle === 'low') { Pp.set(L.x + d.x * D * C20, L.y - D * S20, L.z + d.z * D * C20); Pp.y = Math.max(Pp.y, (nAct ? feetY : L.y - 1.2) + 0.15); }
+    else Pp.set(L.x + d.x * D, nAct ? (size === 'WIDE' ? feetY + 1.55 : eyeY) : L.y, L.z + d.z * D);
+    if (o.height) Pp.y += o.height;
+    if (o.offset) { Pp.x += d.z * o.offset; Pp.z -= d.x * o.offset; L.x += d.z * o.offset; L.z -= d.x * o.offset; }
+    const s = top ? 1 : fitZones(Pp, L, e);
+    out.fov = s < 1 ? Math.min(75, 2 * Math.atan(Math.tan(fv * DEG / 2) / s) / DEG) : fv;
+    return true;
+  }
+  function fillFO(o) {
+    FO.angle = o.angle || null; FO.side = o.side || null; FO.dist = o.dist ?? null; FO.height = o.height || 0;
+    FO.fov = o.fov ?? null; FO.offset = o.offset || 0; FO.facing = !!o.facing;
+    return FO;
+  }
+  function frameFn(subjects, size = 'MID', opts = {}) {
+    frameInto(F, subjects, String(size).toUpperCase(), fillFO(opts), cur);
+    return F;
+  }
+
+  // ------------------------------------------------------------ camera state
+  const cs = { pos: V(), look: V(), fov: 40 }, cp = { pos: V(), look: V(), fov: 40 }, gs = { pos: V(), look: V(), fov: 45 };
+  let snap = true, locked = false;
+  const copyCam = (o, s) => { o.pos.copy(s.pos); o.look.copy(s.look); o.fov = s.fov; };
+  const dirInto = (out, p, yaw, pitch, len) => out.set(p.x + Math.sin(yaw) * Math.cos(pitch) * len, p.y + Math.sin(pitch) * len, p.z + Math.cos(yaw) * Math.cos(pitch) * len);
+  const yawOf = (p, l) => Math.atan2(l.x - p.x, l.z - p.z), pitchOf = (p, l) => Math.atan2(l.y - p.y, Math.hypot(l.x - p.x, l.z - p.z));
+
+  // gameplay: set cams + zones, or an override
+  const G = { name: '', mode: null, opts: null, st: { base: V(), pushT: 0 } };
+  const zoneCam = (e, pa) => {
+    const zs = e.def.zones;
+    if (!pa || !zs) return '';
+    for (let i = 0; i < zs.length; i++) { const b = zs[i].box; if (pa.pos.x >= b[0] && pa.pos.x <= b[2] && pa.pos.z >= b[1] && pa.pos.z <= b[3]) return zs[i].cam; }
+    return '';
+  };
+  function setCamInto(out, e, name, pa, dt, cut, st) {
+    const c = e.def.cams && e.def.cams[name];
+    if (!c) {                             // no cameras at all: a plain overview of the actors
+      if (!frameInto(out, null, 'WIDE', fillFO({ angle: 'high' }), e)) { out.pos.set(0, 6, 10); out.look.set(0, 1, 0); out.fov = 45; }
+      return;
+    }
+    const k = cut ? 1 : damp(5, dt), fixedLook = Array.isArray(c.look);
+    const tgt = t4;
+    if (fixedLook) tgt.fromArray(c.look);
+    else if (pa && pa.set === e) tgt.set(pa.pos.x, pa.pos.y + 1.2, pa.pos.z);
+    else if (c.base) tgt.fromArray(c.base);
+    else if (c.pos) tgt.set(c.pos[0], c.pos[1] - 1, c.pos[2] - 5);
+    else tgt.set(0, 1, 0);
+    // position
+    if (c.type === 'rail' && c.from && c.to) {
+      const ax = c.from[0], az = c.from[2], bx = c.to[0] - ax, bz = c.to[2] - az;
+      const u = clamp(((tgt.x - ax) * bx + (tgt.z - az) * bz) / Math.max(1e-6, bx * bx + bz * bz), 0, 1);
+      t3.set(ax + bx * u, c.from[1] + (c.to[1] - c.from[1]) * u, az + bz * u);
+      if (cut) out.pos.copy(t3); else out.pos.lerp(t3, k);
+    } else if (c.type === 'push' && c.to) {
+      if (cut) st.pushT = 0; else st.pushT += dt;
+      const u = smooth(st.pushT / (c.dur || 20));
+      out.pos.set(c.pos[0] + (c.to[0] - c.pos[0]) * u, c.pos[1] + (c.to[1] - c.pos[1]) * u, c.pos[2] + (c.to[2] - c.pos[2]) * u);
+    } else out.pos.fromArray(c.pos || c.from || [0, 5, 10]);
+    // look
+    if (fixedLook) out.look.copy(tgt);
+    else {
+      const lim = c.limit ?? (c.type === 'pan' ? 0.5 : 0);
+      if (lim > 0) {                      // pan: follow the player within ±limit of the base direction
+        if (cut) { if (c.base) st.base.fromArray(c.base); else st.base.copy(tgt); }
+        const by = yawOf(out.pos, st.base), bp = pitchOf(out.pos, st.base);
+        const yaw = by + clamp(angTo(by, yawOf(out.pos, tgt)), -lim, lim), pitch = bp + clamp(pitchOf(out.pos, tgt) - bp, -lim, lim);
+        dirInto(tgt, out.pos, yaw, pitch, Math.max(1, out.pos.distanceTo(tgt)));
+      }
+      if (cut) out.look.copy(tgt); else out.look.lerp(tgt, k);
+    }
+    out.fov = c.fov ?? 45;
+  }
+  function followInto(out, pa, o, dt, cut) {
+    const dist = o.dist ?? 2.4, h = o.height ?? 1.7, lag = Math.max(0.05, o.lag ?? 0.35), fx = Math.sin(pa.rotY), fz = Math.cos(pa.rotY);
+    t4.set(pa.pos.x - fx * dist, pa.pos.y + h, pa.pos.z - fz * dist);
+    if (cut) out.pos.copy(t4); else out.pos.lerp(t4, damp(1 / lag, dt));
+    const ahead = o.look === 'player' ? 0 : 3;
+    t4.set(pa.pos.x + fx * ahead, pa.pos.y + (ahead ? 1.1 : 1.35), pa.pos.z + fz * ahead);
+    if (cut) out.look.copy(t4); else out.look.lerp(t4, damp(1.5 / lag, dt));
+    out.fov = o.fov ?? 50;
+  }
+  function gameTick(dt) {
+    const e = cur, pa = P.actor && P.actor.set === e ? P.actor : null;
+    let name;
+    if (G.mode === 'follow' && pa) name = 'follow';
+    else if (G.mode === 'fixed') name = 'fixed';
+    else if (G.mode === 'set') name = G.opts.name;
+    else name = zoneCam(e, pa) || G.name || e.firstCam;
+    if (!name) name = '(overview)';
+    const cut = name !== G.name;
+    G.name = name;
+    if (name === 'follow') followInto(gs, pa, G.opts, dt, cut);
+    else if (name === 'fixed') {
+      const o = G.opts;
+      gs.pos.fromArray(o.pos);
+      if (Array.isArray(o.look)) gs.look.fromArray(o.look); else if (pa) gs.look.set(pa.pos.x, pa.pos.y + 1.2, pa.pos.z);
+      gs.fov = o.fov ?? 45;
+    } else setCamInto(gs, e, name, pa, dt, cut, G.st);
+    return cut;
+  }
+
+  // cutscene shots
+  const shotState = () => ({ kind: '', move: '', subj: null, size: 'MID', reaim: false, t: 0, dur: 0, ease: smooth,
+    pos: V(), look: V(), fov: 40, pos0: V(), look0: V(), fov0: 40, up: V().set(0, 0, -1), off: V(), aim: V(), lat: V(), start: { pos: V(), look: V(), fov: 40 }, end: { pos: V(), look: V(), fov: 40 },
+    a0: 0, a1: 0, amount: 1, y0: 0, p0: 0, y1: 0, p1: 0, len: 1, len1: 1, fo: { ...FO }, trackSide: 'left', setcam: '', st: { base: V(), pushT: 0 } });
+  const S = shotState(), SR = shotState();
+  const shotAt = { on: false, near: 0.05, jarvis: null, spot: { c: new THREE.Color(), i: 0, a: 0 } };   // jarvis = the entry whose spot we borrowed
+  const ALIAS = { 'TWO-SHOT': 'TWO', 'THREE-SHOT': 'THREE', 'TOP-DOWN': 'TOP', 'JARVIS-CAM': 'JARVIS', LOW: 'MID', HIGH: 'MID', OTS: 'MID' };
+  const MOVES = { PUSH: 'push', PULL: 'pull', TRACK: 'track', PAN: 'pan', TILT: 'tilt', CRANE: 'crane', ORBIT: 'orbit', WHIP: 'whip', CRASH: 'crash' };
+  const SIZES = { ECU: 1, CLOSE: 1, MID: 1, WIDE: 1, TWO: 1, THREE: 1, TOP: 1 };
+
+  // base framing for any shot kind into o (a shotState) — used by cam.shot and the right half of a split
+  function baseInto(o, step, e) {
+    let k = String(step.shot || 'MID').toUpperCase();
+    const raw = k;
+    if (MOVES[k]) k = String(step.size || 'MID').toUpperCase();
+    k = ALIAS[k] || k;
+    o.kind = k; o.subj = null; o.reaim = false; o.lat.set(0, 0, 0); o.up.set(0, 0, -1);
+    Object.assign(o.fo, fillFO(step));
+    if (raw === 'LOW' || raw === 'HIGH') o.fo.angle = raw.toLowerCase();
+    if (k === 'SET') { setCamInto(o, e, step.cam, P.actor, 0, true, o.st); o.setcam = step.cam; copyTo0(o); return true; }
+    if (k === 'CAM') {
+      o.pos0.fromArray(step.pos); o.look0.fromArray(step.look); o.fov0 = step.fov ?? CONFIG.fov;
+      if (step.to) { o.end.pos.fromArray(step.to.pos || step.pos); o.end.look.fromArray(step.to.look || step.look); o.end.fov = step.to.fov ?? o.fov0; }
+      return true;
+    }
+    if (k === 'INSERT' || k === 'JARVIS') {
+      const id = step.at ?? step.on, an = e.anchors[id];
+      if (k === 'INSERT' && !an && actors.get(id)) {   // an actor's hands/chest
+        frameInto(F, id, 'CLOSE', fillFO({ angle: 'high', dist: step.dist ?? 0.8, fov: step.fov ?? 35 }), e);
+        o.pos0.copy(F.pos); o.pos0.y -= 0.3; o.look0.copy(F.look); o.look0.y -= 0.35; o.fov0 = F.fov;
+        return true;
+      }
+      if (!an && Array.isArray(id)) { o.look0.fromArray(id); o.pos0.fromArray(step.from || [id[0], id[1] + 0.3, id[2] + 0.6]); o.fov0 = step.fov ?? 35; return true; }
+      if (!an) { testLog('cam: no anchor ' + id); return false; }
+      o.look0.copy(an.at);
+      if (an.from) o.pos0.copy(an.from); else o.pos0.set(an.at.x, an.at.y + 0.35, an.at.z + 0.6);
+      o.fov0 = step.fov ?? an.fov ?? (k === 'INSERT' ? 35 : CONFIG.fov);
+      if (k === 'INSERT' && step.angle === 'top') {
+        if (an.from) o.up.set(an.from.x - an.at.x, 0, an.from.z - an.at.z).normalize();
+        o.pos0.set(an.at.x, an.at.y + (step.dist ?? 0.7), an.at.z);
+      }
+      if (k === 'JARVIS' && step.on && gather(step.on, e)) {   // look out at the faces, lens wide enough for all of them
+        t3.set(0, 0, 0); for (let i = 0; i < nS; i++) t3.add(SP[i]); t3.divideScalar(nS); t3.y -= 0.05;
+        o.look0.copy(t3);
+        t2.subVectors(t3, o.pos0).normalize();
+        let ang = 0;
+        for (let i = 0; i < nS; i++) ang = Math.max(ang, t2.angleTo(t1.subVectors(SP[i], o.pos0)));
+        const vf = 2 * Math.atan(Math.tan(ang + 0.14) / aspectNow()) / DEG;
+        o.fov0 = clamp(Math.max(o.fov0, vf), 20, 70);
+      }
+      return true;
+    }
+    if (k === 'POV') {
+      const a = actors.get(step.from);
+      if (a) { a.eyePos(o.pos0); o.pos0.x += Math.sin(a.rotY) * 0.06; o.pos0.z += Math.cos(a.rotY) * 0.06; }
+      else if (e.anchors[step.from]) o.pos0.copy(e.anchors[step.from].from || e.anchors[step.from].at);
+      else pointOf(step.from, o.pos0, e);
+      if (!pointOf(step.at ?? step.on, o.look0, e) && a) o.look0.set(o.pos0.x + Math.sin(a.rotY) * 5, o.pos0.y, o.pos0.z + Math.cos(a.rotY) * 5);
+      o.fov0 = step.fov ?? 45;
+      return true;
+    }
+    if (!SIZES[k]) { testLog('cam: unknown shot ' + raw); k = o.kind = 'MID'; }
+    if (!frameInto(F, step.on, k, o.fo, e)) {
+      if (step.on != null) return false;
+      setCamInto(o, e, e.firstCam, null, 0, true, o.st); copyTo0(o); return true;   // WIDE of nobody: the set's first camera
+    }
+    o.pos0.copy(F.pos); o.look0.copy(F.look); o.fov0 = F.fov; o.up.copy(F.up);
+    o.subj = step.on ?? null; o.size = k;
+    o.reaim = !step.locked && nAct > 0 && k !== 'TOP';
+    if (o.fo.offset) o.lat.set(t2.z * o.fo.offset, 0, -t2.x * o.fo.offset);   // t2 = camera direction from frameInto
+    return true;
+  }
+  function copyTo0(o) { o.pos0.copy(o.pos); o.look0.copy(o.look); o.fov0 = o.fov; }
+
+  function endShotExtras() {
+    if (shotAt.jarvis) { const s = shotAt.jarvis.spot, sv = shotAt.spot; s.color.copy(sv.c); s.intensity = sv.i; s.angle = sv.a; }
+    shotAt.jarvis = null;
+  }
+  function shot(step) {
+    if (!cur || !step) return;
+    endShotExtras();
+    settle(rel, 'res'); rel.on = false;
+    copyCam(S.start, cs);
+    if (!baseInto(S, step, cur)) {        // nothing to frame: hold the current angle
+      copyCam(S, cs); copyTo0(S); S.kind = 'CAM'; S.move = ''; S.subj = null; S.reaim = false;
+      C.cutscene = true; shotAt.on = true; return;
+    }
+    const k = S.kind, raw = String(step.shot || '').toUpperCase();
+    let move = step.move ? String(step.move).toLowerCase().replace(/[^a-z].*$/, '') : MOVES[raw] || '';
+    if (k === 'CAM' && step.to) move = 'glide';
+    S.move = move; S.t = 0; S.ease = EASE[step.ease] || smooth;
+    S.dur = move === 'whip' ? step.dur ?? 0.2 : move === 'crash' ? step.dur ?? 0.12 : step.dur ?? 3;
+    S.off.subVectors(S.pos0, S.look0);
+    S.aim.copy(S.look0);
+    S.len = Math.max(0.5, S.off.length());
+    if (move === 'push') { S.a0 = 1; S.a1 = step.amount ?? 0.6; }
+    else if (move === 'pull') { S.a0 = 1; S.a1 = 1 / (step.amount ?? 0.6); }
+    else if (move === 'crane') { S.a0 = step.from ?? 0; S.a1 = step.to ?? 2; S.amount = step.amount ?? 1; }
+    else if (move === 'orbit') { S.a0 = (step.from ?? 0) * DEG; S.a1 = (step.to ?? 90) * DEG; }
+    else if (move === 'crash') { S.a1 = step.fov ?? S.fov0 * 0.5; if (typeof sfx === 'function' && !skipping()) sfx('sting'); }
+    else if (move === 'track') { const tr = step.track || 'alongside'; S.trackSide = tr === 'ahead' ? 'front' : tr === 'behind' ? 'back' : step.side === 'right' ? 'right' : 'left'; }
+    else if (move === 'pan' || move === 'tilt') {
+      S.y0 = yawOf(S.pos0, S.look0); S.p0 = pitchOf(S.pos0, S.look0); S.y1 = S.y0; S.p1 = S.p0; S.len1 = S.len;
+      if (typeof step.to === 'string' || Array.isArray(step.to)) {
+        if (pointOf(step.to, t3, cur)) { S.y1 = S.y0 + angTo(S.y0, yawOf(S.pos0, t3)); S.p1 = pitchOf(S.pos0, t3); S.len1 = Math.max(0.5, S.pos0.distanceTo(t3)); }
+      } else if (move === 'tilt') { S.p0 += (step.from ?? 0) * DEG; S.p1 = S.p0 - (step.from ?? 0) * DEG + (step.to ?? 25) * DEG; }
+      else { S.y0 -= (step.from ?? 0) * DEG; S.y1 = S.y0 + (step.from ?? 0) * DEG - (step.to ?? 30) * DEG; }   // degrees, + = right
+    } else if (move === 'whip') {
+      S.y0 = yawOf(S.start.pos, S.start.look); S.p0 = pitchOf(S.start.pos, S.start.look);
+      S.y1 = yawOf(S.pos0, S.look0); S.p1 = pitchOf(S.pos0, S.look0); S.len1 = S.len;
+    }
+    C.cutscene = true; shotAt.on = true; shotAt.near = 0.05;
+    if (skipping() && move !== 'track') S.t = S.dur;
+    if (move === 'glide') { S.start.pos.copy(S.pos0); S.start.look.copy(S.look0); S.start.fov = S.fov0; }   // CAM glides from its own pos
+    if (move !== 'whip') { cs.pos.copy(S.pos0); cs.look.copy(S.look0); cs.fov = S.fov0; }
+    snap = true;
+    shotTick(0);
+    if (k === 'JARVIS') {                  // screens watch people: blue light from the screen onto the faces
+      const s = cur.spot, sv = shotAt.spot, an = cur.anchors[step.at];
+      sv.c.copy(s.color); sv.i = s.intensity; sv.a = s.angle; shotAt.jarvis = cur;
+      s.position.copy(an ? an.at : S.pos0); s.target.position.copy(S.look0);
+      const d = s.position.distanceTo(S.look0);
+      s.color.set(0x7fb0ff); s.intensity = 2.5 * Math.pow(Math.max(0.3, d), 1.5); s.angle = 0.7;
+      if (an) {                           // the camera sits behind the screen: start the lens just past it
+        t1.subVectors(an.at, S.pos0); t2.subVectors(S.look0, S.pos0);
+        const sd = t1.length();
+        if (t1.dot(t2) > 0 && sd < t2.length() - 0.2) shotAt.near = sd + 0.06;
+      }
+    }
+    C.name = String(step.shot) + (step.move ? ' ' + step.move : '') + (step.on != null ? ' ' + step.on : step.at != null ? ' ' + step.at : '');
+  }
+  function shotTick(dt) {
+    if (locked) return;
+    const s = S;
+    if (s.kind === 'SET') { setCamInto(cs, cur, s.setcam, P.actor, dt, false, s.st); return; }
+    s.t += dt;
+    const u = s.dur > 0 ? Math.min(1, s.t / s.dur) : 1, k = s.ease(u);
+    if (s.subj != null && s.kind !== 'TOP' && aimInto(s.aim, s.subj, s.size, cur)) s.aim.add(s.lat); else s.aim.copy(s.look0);
+    switch (s.move) {
+      case 'push': case 'pull': case 'crane': {
+        const sc = s.move === 'crane' ? 1 + (s.amount - 1) * k : s.a0 + (s.a1 - s.a0) * k;
+        cs.pos.copy(s.off).multiplyScalar(sc).add(s.aim);
+        if (s.move === 'crane') cs.pos.y += s.a0 + (s.a1 - s.a0) * k;
+        cs.look.copy(s.aim);
+        break;
+      }
+      case 'orbit': {
+        const a = s.a0 + (s.a1 - s.a0) * k, c = Math.cos(a), sn = Math.sin(a);
+        cs.pos.set(s.aim.x + s.off.x * c + s.off.z * sn, s.aim.y + s.off.y, s.aim.z - s.off.x * sn + s.off.z * c);
+        cs.look.copy(s.aim);
+        break;
+      }
+      case 'track': {   // moves with the subject exactly; only the angle eases when they turn
+        const tr = s.fo.side; s.fo.side = s.trackSide; s.fo.facing = true;
+        if (frameInto(F, s.subj, s.size, s.fo, cur)) {
+          t5.subVectors(F.pos, F.look);
+          if (s.t < 0.02) s.off.copy(t5); else s.off.lerp(t5, damp(3, dt));
+          cs.pos.copy(F.look).add(s.off); cs.look.copy(F.look); cs.fov = F.fov;
+        }
+        s.fo.side = tr;
+        break;
+      }
+      case 'pan': case 'tilt':
+        cs.pos.copy(s.pos0);
+        dirInto(cs.look, cs.pos, s.y0 + (s.y1 - s.y0) * k, s.p0 + (s.p1 - s.p0) * k, s.len + (s.len1 - s.len) * k);
+        break;
+      case 'whip': {   // very fast pan with an overshoot and a lens breath: reads as motion blur, costs nothing
+        const w = Math.sin(Math.PI * u), dy = angTo(s.y0, s.y1);
+        cs.pos.lerpVectors(s.start.pos, s.pos0, k);
+        dirInto(cs.look, cs.pos, s.y0 + dy * k + Math.sign(dy) * 0.16 * w, s.p0 + (s.p1 - s.p0) * k, s.len);
+        cs.fov = s.start.fov + (s.fov0 - s.start.fov) * k + 9 * w;
+        if (u >= 1) { s.move = ''; cs.pos.copy(s.pos0); cs.look.copy(s.look0); cs.fov = s.fov0; }
+        break;
+      }
+      case 'crash':
+        cs.pos.copy(s.pos0); cs.look.copy(s.aim);
+        cs.fov = s.fov0 + (s.a1 - s.fov0) * EASE.out(u);
+        break;
+      case 'glide':
+        cs.pos.lerpVectors(s.start.pos, s.end.pos, k); cs.look.lerpVectors(s.start.look, s.end.look, k);
+        cs.fov = s.start.fov + (s.end.fov - s.start.fov) * k;
+        break;
+      default:
+        if (s.reaim) cs.look.lerp(s.aim, damp(2.5, dt));   // the operator keeps the subject framed (a head lifting, a step)
+    }
+  }
+
+  const rel = { on: false, t: 0, dur: 0.8, pos: V(), look: V(), fov: 40, res: null };
+  function camTick(dt) {
+    copyCam(cp, cs);
+    const cut = gameTick(dt);
+    if (shotAt.on) shotTick(dt);
+    else if (rel.on) {
+      rel.t += dt;
+      const k = smooth(rel.t / rel.dur);
+      cs.pos.lerpVectors(rel.pos, gs.pos, k); cs.look.lerpVectors(rel.look, gs.look, k); cs.fov = rel.fov + (gs.fov - rel.fov) * k;
+      if (rel.t >= rel.dur) { rel.on = false; settle(rel, 'res'); }
+    } else { copyCam(cs, gs); if (cut) snap = true; }
+    if (!shotAt.on) C.name = G.name;
+    if (snap) { copyCam(cp, cs); snap = false; }
+  }
+
+  const PROJ = { x: 0, y: 0, visible: false };
+  let lastLW = 0, lastW = 0, lastH = 0;
+  const C = {
+    name: '', cutscene: false,
+    get camera() { return camera; },
+    shot,
+    lock(on) { locked = !!on; },
+    release(dur = 0.8) {
+      endShotExtras();
+      shotAt.on = false; C.cutscene = false; locked = false;
+      settle(rel, 'res');
+      if (!cur) return Promise.resolve();
+      G.name = ''; gameTick(0);
+      if (skipping() || !(dur > 0)) { rel.on = false; copyCam(cs, gs); snap = true; return Promise.resolve(); }
+      rel.pos.copy(cs.pos); rel.look.copy(cs.look); rel.fov = cs.fov; rel.t = 0; rel.dur = dur; rel.on = true;
+      return new Promise((r) => { rel.res = r; });
+    },
+    override(mode, opts = {}) {
+      if (mode !== G.mode || mode === 'fixed' || mode === 'set') G.name = '';   // cut; a new 'follow' distance eases in
+      G.mode = mode || null; G.opts = opts;
+      if (!mode) G.name = '';
+    },
+    project(v) {
+      t5.copy(v).project(camera);
+      renderer.getSize(size2);
+      const w = splitE ? lastLW || size2.x / 2 : size2.x;
+      PROJ.x = (t5.x + 1) / 2 * w; PROJ.y = (1 - t5.y) / 2 * size2.y;
+      PROJ.visible = t5.z < 1 && t5.z > -1 && Math.abs(t5.x) <= 1 && Math.abs(t5.y) <= 1;
+      return PROJ;
+    },
+  };
+
+  // aim a camera at a point; near-vertical views take their "up" from the subject so top-downs stay stable
+  function aimCam(c, look, up) {
+    t3.subVectors(look, c.position).normalize();
+    const k = smooth((Math.abs(t3.y) - 0.93) / 0.065);
+    c.up.set(up.x * k, 1 - k, up.z * k).normalize();
+    c.lookAt(look);
+  }
+
+  // ------------------------------------------------------------ split screen + time-lapse
+  const slide = { on: false, t: 0, res: null };
+  function split(spec, o = {}) {
+    if (!spec) {
+      if (!splitE) return Promise.resolve();
+      if (o.slide && !skipping()) { slide.on = true; slide.t = 0; return new Promise((r) => { slide.res = r; }); }
+      splitE = null; return Promise.resolve();
+    }
+    const L = spec.left || {}, R = spec.right || {};
+    if (L.set && (!cur || L.set !== cur.id)) showE(ensure(L.set));
+    splitE = ensure(R.set);
+    slide.on = false;
+    const ls = L.shot ?? L.cam, rs = R.shot ?? R.cam;
+    if (ls) C.shot(typeof ls === 'string' ? { shot: 'SET', cam: ls } : ls);
+    if (!baseInto(SR, typeof rs === 'string' ? { shot: 'SET', cam: rs } : rs || { shot: 'WIDE' }, splitE)) { SR.pos0.set(0, 2, 6); SR.look0.set(0, 1, 0); SR.fov0 = 40; }
+    camR.position.copy(SR.pos0); camR.fov = SR.fov0; aimCam(camR, SR.look0, SR.up); camR.updateProjectionMatrix();
+    return Promise.resolve();
+  }
+  const TL = { on: false, t: 0, dur: 8, cycles: 3, a: envNew(), b: envNew(), keys: [], ki: 0, res: null, wasLocked: false };
+  function fireKey(kk) {
+    try {
+      if (kk.do) kk.do();
+      else if (kk.steps && typeof runSteps === 'function') runSteps(kk.steps);
+    } catch (err) { console.error('RUE timelapse key', err); }
+  }
+  function timelapse(o = {}) {
+    const e = cur;
+    if (!e) return Promise.resolve();
+    const pre = (p) => (typeof p === 'string' ? e.def.env && e.def.env[p] : p) || {};
+    const fn = typeof o.from === 'string' ? o.from : 'day', tn = typeof o.to === 'string' ? o.to : 'night';
+    envFill(envCopy(TL.a, e.env), pre(o.from ?? 'day'), fn, e);
+    envFill(envCopy(TL.b, TL.a), pre(o.to ?? 'night'), tn, e);
+    TL.keys = (o.keys || []).slice().sort((x, y) => x.t - y.t); TL.ki = 0; TL.t = 0;
+    TL.dur = o.dur || 8; TL.cycles = o.cycles || 3;
+    if (skipping()) { for (const kk of TL.keys) fireKey(kk); envCopy(e.env, TL.a); envApply(e, e.env); return Promise.resolve(); }
+    settle(TL, 'res');
+    TL.wasLocked = locked; locked = true; TL.on = true;
+    return new Promise((r) => { TL.res = r; });
+  }
+  function tlTick(dt) {
+    const e = cur;
+    TL.t += dt;
+    envLerp(e.env, TL.a, TL.b, 0.5 - 0.5 * Math.cos(TAU * TL.cycles * Math.min(1, TL.t / TL.dur)));
+    envApply(e, e.env);
+    while (TL.ki < TL.keys.length && (TL.keys[TL.ki].t <= TL.t || TL.t >= TL.dur)) fireKey(TL.keys[TL.ki++]);
+    if (TL.t >= TL.dur) { TL.on = false; locked = TL.wasLocked; settle(TL, 'res'); }
+  }
+
+  // ------------------------------------------------------------ update + render
+  function shown(a) { return a.set === cur || (a.set === splitE && splitE); }
+  function setTick(e, dt) {
+    const x = e.ctx;
+    x.t = clock.t; x.player = P.actor; x.running = P.running; x.env = e.envName;
+    if (e.def.update) e.def.update(dt, x);
+    if (e.rain && e.rain.visible) e.rain.uniforms.uTime.value += dt;
+    puffTick(e, dt);
+  }
+  function update(dt) {
+    const e = cur;
+    if (!e) return;
+    envTick(e, dt);
+    if (splitE) envTick(splitE, dt);
+    if (TL.on) tlTick(dt);
+    for (let i = 0; i < A.length; i++) { const a = A[i]; if (shown(a)) { a.prev.copy(a.pos); a.prevRot = a.rotY; } }
+    playerTick(dt);
+    followerTick(dt);
+    for (let i = 0; i < A.length; i++) if (shown(A[i])) actorTick(A[i], dt);
+    setTick(e, dt);
+    if (splitE) setTick(splitE, dt);
+    torchTick(e);
+    camTick(dt);
+    if (slide.on && (slide.t += dt) >= 0.6) { slide.on = false; splitE = null; settle(slide, 'res'); }
+  }
+  const lookI = V(), UPZ = V().set(0, 0, -1);
+  function render(alpha) {
+    const e = cur;
+    if (!e) return;
+    renderer.getSize(size2);
+    const w = size2.x, h = size2.y, dtA = alpha * CONFIG.step;
+    for (let i = 0; i < A.length; i++) {   // interpolate between the last two ticks, pose once per frame
+      const a = A[i];
+      if (!shown(a)) continue;
+      a.keep.copy(a.pos); a.pos.lerpVectors(a.prev, a.keep, alpha);
+      a.root.rotation.y = a.prevRot + angTo(a.prevRot, a.rotY) * alpha;
+      if (a.root.visible) a.rig.pose(a.poseName || 'idle', a.poseT + dtA, a.p);
+    }
+    camera.position.lerpVectors(cp.pos, cs.pos, alpha);
+    lookI.lerpVectors(cp.look, cs.look, alpha);
+    aimCam(camera, lookI, shotAt.on ? S.up : UPZ);
+    const fov = cp.fov + (cs.fov - cp.fov) * alpha, near = shotAt.on ? shotAt.near : 0.05;
+    if (camera.near !== near) { camera.near = near; lastLW = 0; }
+    const lw = splitE ? Math.round(w * (slide.on ? 0.5 + 0.5 * smooth(slide.t / 0.6) : 0.5)) : w;
+    if (camera.fov !== fov || lw !== lastLW || h !== lastH) { camera.fov = fov; camera.aspect = lw / h; camera.updateProjectionMatrix(); }
+    if (typeof AUDIO !== 'undefined' && AUDIO.listener) AUDIO.listener(camera);
+    if (!splitE) {
+      renderer.render(e.scene, camera);
+    } else {
+      renderer.setScissorTest(false); renderer.setClearColor(0x000000, 1); renderer.clear();
+      renderer.setScissorTest(true);
+      const lv = slide.on ? lw : lw - 2;   // a thin black divide between the halves
+      renderer.setViewport(0, 0, lv, h); renderer.setScissor(0, 0, lv, h);
+      renderer.render(e.scene, camera);
+      if (!slide.on) {
+        if (w !== lastW || h !== lastH) { camR.aspect = (w - lw - 2) / h; camR.updateProjectionMatrix(); }
+        renderer.setViewport(lw + 2, 0, w - lw - 2, h); renderer.setScissor(lw + 2, 0, w - lw - 2, h);
+        renderer.render(splitE.scene, camR);
+      }
+      renderer.setScissorTest(false); renderer.setViewport(0, 0, w, h);
+    }
+    lastLW = lw; lastW = w; lastH = h;
+    for (let i = 0; i < A.length; i++) if (shown(A[i])) A[i].pos.copy(A[i].keep);
+  }
+
+  // ------------------------------------------------------------ world
+  const W = {
+    set: null, setId: null, actors, torchAuto: true, camera,
+    get torch() { return cur ? cur.spot : null; },
+    get scene() { return cur ? cur.scene : null; },
+    async load(id, o = {}) {
+      const e = ensure(id);
+      if (o.env) envSet(e, o.env, 0);
+      showE(e);
+      trim();
+    },
+    preload(id) { ensure(id); return Promise.resolve(); },
+    show(id) { showE(ensure(id)); trim(); },
+    warm(id) {
+      const had = live.get(id), e = had || build(id), hidden = [];
+      e.scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });   // compile what appears later too
+      const sh = blobShadow(); e.scene.add(sh);
+      box3.setFromObject(e.group); box3.getCenter(t1); box3.getSize(t2);
+      camera.position.set(t1.x + t2.x * 0.3, t1.y + t2.y + 2, t1.z + t2.z * 0.6); camera.lookAt(t1);
+      camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+      upload(e);
+      renderer.render(e.scene, camera);     // under the loader
+      e.scene.remove(sh);
+      for (const o of hidden) o.visible = false;
+      if (!had) disposeGeo(e);
+      snap = true; lastLW = 0;
+    },
+    env(p, dur = 0, setId) { return envSet(setId ? live.get(setId) : cur, p, dur); },
+    spawn,
+    despawn(id) { const a = actors.get(id); if (a) despawnA(a); },
+    actor: (id) => actors.get(id),
+    talk(id, on) {
+      const a = actors.get(id);
+      if (a) {
+        a.rig.talk(on);
+        if (on && a.habit === 'glance' && a.anim === 'idle' && !a.mv.on && !a.playRes) glance(a);   // he checks on Chase before he speaks
+        return;
+      }
+      const c = CHARACTERS[id];
+      if (c && c.voice && c.voice.also) for (const part of id.split('_')) if (actors.has(part)) actors.get(part).rig.talk(on);
+    },
+    prop(name) {
+      if (cur && cur.props[name]) return cur.props[name];
+      for (const e of live.values()) if (e.props[name]) return e.props[name];
+      return undefined;
+    },
+    anchor: (name) => cur && cur.anchors[name],
+    mark: (name) => cur && cur.def.marks && cur.def.marks[name],
+    // world.puff(where, {n, color, speed, life, gravity}) — pooled smoke (default) or sparks ({color: 0xffd060, gravity: 6})
+    puff(where, o = {}) {
+      const e = cur;
+      if (!e || skipping()) return;
+      const pr = typeof where === 'string' && e.props[where];
+      if (pr) pr.getWorldPosition(t1); else resolveWhere(where, t1, e);
+      const pz = e.puff, u = pz.userData, pa = pz.geometry.attributes.position.array, ca = pz.geometry.attributes.color.array;
+      tc.set(o.color ?? 0xb8b8b8);
+      const n = o.n ?? 14, sp = o.speed ?? 0.6, life = o.life ?? 1.2, g = o.gravity ?? -0.5;
+      for (let i = 0; i < n; i++) {
+        const j = u.next; u.next = (j + 1) % PUFF;
+        pa[j * 3] = t1.x + (Math.random() - 0.5) * 0.08; pa[j * 3 + 1] = t1.y + (Math.random() - 0.5) * 0.08; pa[j * 3 + 2] = t1.z + (Math.random() - 0.5) * 0.08;
+        t2.set(Math.random() - 0.5, Math.random() * 0.8, Math.random() - 0.5).normalize().multiplyScalar(sp * (0.5 + Math.random()));
+        u.vel[j * 3] = t2.x; u.vel[j * 3 + 1] = t2.y; u.vel[j * 3 + 2] = t2.z;
+        u.life[j] = u.max[j] = life * (0.7 + Math.random() * 0.6); u.g[j] = g;
+        ca[j * 4] = tc.r; ca[j * 4 + 1] = tc.g; ca[j * 4 + 2] = tc.b; ca[j * 4 + 3] = 0.85;
+      }
+      pz.visible = true;
+    },
+    update, render, split, timelapse,
+  };
+
+  return { world: W, cam: C, frame: frameFn, player: P };
+})();
+
 // ============================================================ UI
 // All DOM UI in #ui: fades, letterbox, cards, prompts, dialogue (say/choose/ask), JARVIS pop-ups,
 // 1987 HUD, objective, portraits, inventory panel, menus, and the CARDS painters for INSERT close-ups.
@@ -3486,6 +4654,610 @@ Object.assign(CARDS, (() => {
 
   return { postit, clock, phone, brick, screen, newspaper, poster, badge, calendar, watch, label, list, polaroid, plaque, nameplate, tv, battery, filofax, wheel };
 })());
+// ============================================================ FLOW
+// Cutscene step runner, scene flow, hotspots, inventory and the minigame host (contract section 6).
+// Every async run captures the generation G; flow.start/stop bump it so stale runs just stop.
+
+const { flow, hotspots, inventory, runSteps, playCutscene } = (() => {
+  let G = 0, cutDepth = 0, cardOn = false, inited = false, mg = null, panelOpen = false;
+  const loops = {}; // audio loops started by steps: name -> [handles] (alarms layer)
+  const hudEl = document.getElementById('hud'), ovEl = document.getElementById('overlay'), mgEl = document.getElementById('mg');
+  const NOAMB = { rain: false, loops: [], room: 'none' };
+
+  const audio = () => (typeof AUDIO !== 'undefined' ? AUDIO : null);
+  const sfxFn = (n, o) => ui.sfx(n, o);
+  const mus = (c, o) => { if (typeof music === 'function') music(c, o); };
+  const silence = (on) => { if (typeof music === 'function' && music.silence) music.silence(on); };
+  const ctx = () => ({ world, cam, flow, state, ui, say, ask, choose, popup, hud, wait, sfx: sfxFn, music: mus, AUDIO: audio(),
+    player, inventory, hotspots, runSteps, playCutscene });
+  const actorOf = (id) => { const a = world.actor(id); if (!a) console.warn('RUE: no actor ' + id); return a; };
+  const itemName = (id) => (ITEMS[id] && ITEMS[id].name) || id;
+
+  // ---------------------------------------------------------- state helpers
+  function setFlag(n, v = true) { state.flags[n] = v; emit('flag:set', { name: n, value: v }); }
+  function learnName(n) { if (state.names.includes(n)) return; state.names.push(n); ui.toast('Name learned: ' + n); }
+  function learnSample(k) {
+    if (state.samples.includes(k)) return;
+    state.samples.push(k);
+    ui.toast('Sample recorded: ' + ((SAMPLES[k] && SAMPLES[k].label) || k));
+  }
+  function grant(g) {
+    if (g.flags) Object.assign(state.flags, g.flags);
+    for (const [k, to] of [['items', 'inventory'], ['names', 'names'], ['samples', 'samples'], ['bugs', 'bugs']])
+      if (g[k]) for (const v of g[k]) if (!state[to].includes(v)) state[to].push(v);
+    for (const k of ['battery', 'bars', 'pattern', 'active']) if (k in g) state[k] = g[k];
+  }
+
+  // ---------------------------------------------------------- sets and actors
+  async function loadSet(id, env) {
+    await world.load(id, { env });
+    const amb = (world.set && world.set.ambience) || NOAMB, A = audio();
+    if (A) { A.ambience(amb); A.setRoom(amb.room || 'none'); }
+  }
+  function spawnMap(m) {
+    for (const id in m) {
+      const w = m[id];
+      if (w && typeof w === 'object' && !Array.isArray(w)) world.spawn(id, w.at, w); else world.spawn(id, w);
+    }
+  }
+  function despawnAll() {
+    const A = world.actors;
+    for (const id of (A instanceof Map ? [...A.keys()] : Object.keys(A || {}))) world.despawn(id);
+  }
+  function recontrol() {
+    if (world.actor(state.active)) player.control(state.active);
+    if (flow.follow && world.actor(flow.follow)) player.follower(flow.follow);
+  }
+  async function changeSet(id, env, spawn) {
+    await loadSet(id, env);
+    if (spawn) spawnMap(spawn);
+    recontrol();
+  }
+  function otherPlayable() {
+    const pl = (flow.scene && flow.scene.playable) || [];
+    return pl.length > 1 ? pl[(pl.indexOf(state.active) + 1) % pl.length] : null;
+  }
+  function showSwap() {
+    const o = otherPlayable();
+    if (flow.roaming && flow.swap && o) ui.swapIndicator(state.active, o); else ui.swapIndicator(null);
+  }
+  function doSwap() {
+    const prev = state.active, nx = otherPlayable();
+    if (!nx || !world.actor(nx)) return;
+    state.active = nx; player.control(nx);
+    if (flow.follow) { flow.follow = prev; player.follower(prev); }
+    hotspots.reset(); showSwap(); ui.sfx('pop', { vol: 0.5 });
+  }
+
+  // ---------------------------------------------------------- cutscene steps
+  function runAny(x) { return typeof x === 'function' ? x(ctx()) : playCutscene(x, { letterbox: false }); }
+
+  async function runSteps(steps, o) {
+    if (!steps) return;
+    if (o && o.letterbox) ui.letterbox(true);
+    const g = G;
+    for (let i = 0; i < steps.length; i++) {
+      if (g !== G) return;
+      try { const p = step(steps[i]); if (p) await p; } catch (e) { console.error('RUE: step failed', steps[i], e); }
+    }
+  }
+
+  async function playCutscene(c, o = {}) {
+    const steps = typeof c === 'string' ? CUTSCENES[c] : c;
+    if (!steps) { console.warn('RUE: no cutscene ' + c); return; }
+    if (typeof c === 'string') testLog('cutscene ' + c);
+    const g = G, lb = o.letterbox !== false;
+    cutDepth++;
+    player.enabled = false; ui.prompt(null); hotspots.reset();
+    if (lb) ui.letterbox(true);
+    await runSteps(steps);
+    if (g !== G) return;
+    cutDepth--;
+    if (cutDepth) return;
+    if (cardOn) { ui.card(null); cardOn = false; }
+    if (!o.keep) { // the last shot eases into the gameplay camera as the bars slide away
+      if (lb) ui.letterbox(false);
+      if (cam.cutscene) await cam.release(flow.skipping ? 0 : 0.8);
+      if (g !== G) return;
+    }
+    if (!cutDepth) { flow.skipping = false; clock.scale = 1; }
+    if (flow.roaming && !flow.busy) player.enabled = true;
+  }
+
+  function step(s) {
+    const sk = flow.skipping;
+    if ('shot' in s) {
+      if (sk) return;
+      cam.shot(s);
+      if (s.card) { ui.card(s.card[0], s.card[1]); cardOn = true; } else if (cardOn) { ui.card(null); cardOn = false; }
+      return;
+    }
+    if ('say' in s) {
+      if (sk) return;
+      const a = world.actor(s.say); // optional cues on a line: {say, text, expr: 'worried', act: 'lanyard'}
+      if (a && s.expr) a.setExpr(s.expr);
+      if (a && typeof s.act === 'string') a.play(s.act);
+      return say(s.say, s.text, s);
+    }
+    if ('choice' in s) return choose(s.choice, s).then((i) => { flow.result = i; if (s.flag) setFlag(s.flag, i); });
+    if ('ask' in s) return ask(s.ask, s).then((v) => { flow.result = v; if (s.flag) setFlag(s.flag, v); return runSteps(v ? s.yes : s.no); });
+    if ('popup' in s) {
+      if (s.clear) popup.clear();
+      if (!s.popup || sk) return;
+      const p = popup(s.popup);
+      if (s.wait) return p.done.then((i) => { flow.result = i; });
+      return;
+    }
+    if ('set' in s) return changeSet(s.set, s.env, s.spawn);
+    if ('hold' in s) { const a = actorOf(s.hold); if (a) a.hold(s.prop ?? null, s.hand); return; }
+    if ('music' in s) { mus(s.music, sk ? { cut: true } : s); return; }
+    if ('par' in s) return Promise.all(s.par.map((x) => runSteps([x])));
+    if ('if' in s) return runSteps(s.if(state) ? s.then : s.else);
+    if ('do' in s) return s.do(ctx());
+    if ('stare' in s) return stare(s);
+    if ('move' in s) return move(s);
+    if ('face' in s) { const a = actorOf(s.face); if (a) a.face(s.to, sk ? 0 : s.dur); return; }
+    if ('expr' in s) { for (const [id, e] of s.expr) { const a = actorOf(id); if (a) a.setExpr(e); } return; }
+    if ('act' in s) { for (const [id, anim, o] of s.act) { const a = actorOf(id); if (a) a.play(anim, o || {}); } return; }
+    if ('spawn' in s) { world.spawn(s.spawn, s.at, s); return; }
+    if ('despawn' in s) { world.despawn(s.despawn); return; }
+    if ('place' in s) { const a = actorOf(s.place); if (a) a.place(s.at); return; }
+    if ('prop' in s) {
+      const o = world.prop(s.prop);
+      if (!o) { console.warn('RUE: no prop ' + s.prop); return; }
+      if ('visible' in s) o.visible = s.visible;
+      if (s.pos) o.position.set(s.pos[0], s.pos[1], s.pos[2]);
+      if ('rotY' in s) o.rotation.y = s.rotY;
+      if (s.fn) s.fn(o);
+      return;
+    }
+    if ('sfx' in s) { if (!sk) ui.sfx(s.sfx, s); return; }
+    if ('loop' in s) {
+      const l = loops[s.loop] || (loops[s.loop] = []), A = audio();
+      if (s.stop) { for (const h of l) h.stop(s.fade ?? 0.5); l.length = 0; } else if (A) l.push(A.loop(s.loop, s));
+      return;
+    }
+    if ('wait' in s) return wait(s.wait);
+    if ('flash' in s) return ui.flash(s.flash, s.color);
+    if ('fade' in s) return ui.fade(s.fade, s.dur ?? 0.5, s.color);
+    if ('letterbox' in s) { ui.letterbox(s.letterbox); return; }
+    if ('hud' in s) { if (!s.hud) hud.set(null); else if (s.anim) hud.animate(s.hud, s.anim); else hud.set(s.hud); return; }
+    if ('flag' in s) { setFlag(s.flag, 'value' in s ? s.value : true); return; }
+    if ('item' in s) {
+      if (s.remove) inventory.remove(s.item);
+      else if (!inventory.has(s.item)) { inventory.add(s.item); ui.toast('New item: ' + itemName(s.item)); }
+      return;
+    }
+    if ('name' in s) { learnName(s.name); return; }
+    if ('sample' in s) { learnSample(s.sample); return; }
+    if ('objective' in s) { if (Array.isArray(s.objective)) objective.list(s.objective); else objective(s.objective); return; }
+    if ('env' in s) { world.env(s.env, sk ? 0 : s.dur || 0); return; }
+    if ('split' in s) {
+      if (!s.split) { world.split(null, s); return; }
+      const sp = s.split, g = G;
+      return Promise.all([world.preload(sp.left.set), world.preload(sp.right.set)]).then(() => { if (g === G) world.split(sp, s); });
+    }
+    if ('timelapse' in s) return timelapse(s.timelapse);
+    if ('title' in s) return ui.title(s.title, s.dur);
+    if ('actCard' in s) return ui.actCard(s.actCard);
+    console.warn('RUE: unknown step', s);
+  }
+
+  function move(s) {
+    const a = actorOf(s.move);
+    if (!a) return;
+    if (flow.skipping) { a.place(s.to); return; }
+    const p = a.moveTo(s.to, s);
+    if (s.nowait) return;
+    let done = false;
+    p.then(() => { done = true; });
+    return waitUntil(() => done).then(() => { if (!done) a.place(s.to); }); // skipped mid-walk: jump there
+  }
+
+  // The stare: camera locked, music silent, no UI; the world and its ambient sounds carry on.
+  function stare(s) {
+    if (flow.skipping) return;
+    const len = Math.min(4, s.stare || 3), amb = (s.ambient || []).slice().sort((a, b) => a[1] - b[1]), t0 = clock.t;
+    let k = 0;
+    cam.lock(true); silence(true); ui.prompt(null); hudEl.style.visibility = 'hidden';
+    return waitUntil(() => {
+      const t = clock.t - t0;
+      for (; k < amb.length && amb[k][1] <= t; k++) ui.sfx(amb[k][0]);
+      if (t >= len) return true;
+      if (t >= 1 && input.pressed('yes')) { input.consume('yes'); return true; }
+      return false;
+    }).then(() => { cam.lock(false); silence(false); hudEl.style.visibility = ''; });
+  }
+
+  function timelapse(tl) {
+    const keys = tl.keys || [], fired = keys.map(() => false);
+    const fire = (i) => { if (fired[i]) return; fired[i] = true; return runSteps(keys[i].steps); };
+    const rest = async () => { for (let i = 0; i < keys.length; i++) await fire(i); }; // keys a skip jumped over still apply
+    if (flow.skipping) return rest();
+    let done = false;
+    world.timelapse(Object.assign({}, tl, { keys: keys.map((k, i) => ({ t: k.t, do() { fire(i); } })) })).then(() => { done = true; });
+    return waitUntil(() => done).then(rest);
+  }
+
+  // ---------------------------------------------------------- busy runs (hotspot actions, inventory, hints)
+  async function busyRun(fn) {
+    const g = G;
+    flow.busy = true; player.enabled = false; ui.prompt(null); hotspots.reset();
+    try { await fn(); } catch (e) { console.error('RUE: action failed', e); }
+    if (g !== G) return;
+    flow.busy = false;
+    if (flow.roaming) player.enabled = true;
+  }
+
+  // ---------------------------------------------------------- hotspots
+  const hotspots = (() => {
+    const list = [], used = new Set();
+    let near = null, nearSel = null, holdH = null, holdT = 0, holdOn = false, hx = 0, hz = 0;
+    const canRecord = (h) => !!h.sample && inventory.has('recorder') && !state.samples.includes(h.sample);
+    const acts = (h) => !!(h.text != null || h.steps || h.ask || h.use || h.kettle || h.door || h.do);
+    function live(h) {
+      if (used.has(h) || (h.once && h.flag && state.flags[h.flag])) return false;
+      if (h.only && h.only !== state.active) return false;
+      if (h.when && !h.when(state)) return false;
+      return acts(h) || canRecord(h);
+    }
+    function where(h) { // -> hx, hz; false when the spot isn't in this set
+      const at = h.at ?? h.id;
+      if (Array.isArray(at)) { hx = at[0]; hz = at[2]; return true; }
+      const a = world.actor(at);
+      if (a) { hx = a.pos.x; hz = a.pos.z; return a !== player.actor; }
+      if (h._set !== world.setId) { // anchors/marks don't move: resolve once per set
+        h._set = world.setId;
+        const an = world.anchor(at), p = an ? an.at : world.mark(at);
+        h._x = p ? p.x ?? p[0] : NaN; h._z = p ? p.z ?? p[2] : NaN;
+      }
+      hx = h._x; hz = h._z;
+      return hx === hx;
+    }
+    function label(h) {
+      const sel = inventory.selected;
+      if (sel) return 'YES — Use ' + itemName(sel);
+      const v = h.verb || 'Examine', base = v === 'YES' || v === 'NO' ? v : 'YES — ' + v;
+      if (!canRecord(h)) return base;
+      return acts(h) ? base + ' · hold to record' : 'YES — Hold to record';
+    }
+    function update(dt) {
+      const me = player.actor;
+      if (!me) return;
+      if (holdH) { // hold YES for 1 s with the recorder; a tap does the spot's normal action
+        const h = holdH;
+        if (input.held('yes')) {
+          holdT += dt;
+          if (holdT >= 0.2 && !holdOn) { holdOn = true; ui.prompt('YES — Recording…'); ui.sfx('dictaphone'); }
+          if (holdT < 1) return;
+          holdH = null; near = null; player.enabled = true;
+          ui.sfx((SAMPLES[h.sample] && SAMPLES[h.sample].sfx) || 'beep');
+          learnSample(h.sample);
+          return;
+        }
+        holdH = null; near = null; player.enabled = true;
+        if (acts(h)) busyRun(() => fire(h));
+        return;
+      }
+      let best = null, bd = 1e9;
+      for (let i = 0; i < list.length; i++) {
+        const h = list[i];
+        if (!live(h) || !where(h)) continue;
+        const dx = hx - me.pos.x, dz = hz - me.pos.z, d = dx * dx + dz * dz, r = h.r || 1.2;
+        if (d <= r * r && d < bd) { bd = d; best = h; }
+      }
+      if (best !== near || inventory.selected !== nearSel) { near = best; nearSel = inventory.selected; ui.prompt(best ? label(best) : null); }
+      if (!best) { if (inventory.selected && input.pressed('no')) { input.consume('no'); inventory.selected = null; } return; }
+      const key = best.verb === 'NO' && !inventory.selected ? 'no' : 'yes';
+      if (!input.pressed(key)) return;
+      input.consume(key);
+      if (canRecord(best) && !inventory.selected) { holdH = best; holdT = 0; holdOn = false; player.enabled = false; return; }
+      busyRun(() => fire(best));
+    }
+    function speak(h) {
+      let t = h.text, who = h.by || state.active;
+      if (Array.isArray(t)) { h._n = ((h._n ?? -1) + 1) % t.length; t = t[h._n]; }
+      if (t && typeof t === 'object') { const k = state.active in t ? state.active : Object.keys(t)[0]; if (!h.by) who = k; t = t[k]; }
+      return say(who, t);
+    }
+    async function kettle(h) {
+      if (!(await ask('Put the kettle on?'))) return false;
+      if (player.actor && where(h)) player.actor.face([hx, hz]);
+      ui.sfx('kettle'); // boils, clicks off, steam rises
+      const at = h.at ?? h.id, steam = { n: 16, speed: 0.25, life: 1.8, color: 0xf2f2f2 };
+      await wait(1.8); world.puff(at, steam);
+      await wait(1.4); world.puff(at, steam);
+      return true;
+    }
+    function placeParty(mark) { // spawn (not place) so actors also move across into a new set
+      const f = flow.follow, m = typeof mark === 'string' ? world.mark(mark) : mark;
+      world.spawn(state.active, mark);
+      if (f && m) { const r = m[3] || 0; world.spawn(f, [m[0] - Math.sin(r) * 0.8, m[1], m[2] - Math.cos(r) * 0.8, r]); }
+      recontrol();
+    }
+    async function door(h) {
+      const d = h.door, kind = d.kind || 'jarvis', to = d.to && typeof d.to === 'object' && !Array.isArray(d.to) ? d.to : { mark: d.to };
+      if (kind === 'jarvis') { // "takes nine seconds": ~2 s of spinner, then a jump cut
+        const p = popup({ msg: 'JARVIS is loading this door.', spinner: true, buttons: [], icon: 'info' });
+        const key = 'door_seen_' + h.id, first = d.first && !state.flags[key];
+        if (first) state.flags[key] = true;
+        await Promise.all([wait(2), first ? playCutscene(d.first, { letterbox: false }) : null]);
+        p.close();
+      } else if (kind === 'wood') { ui.sfx('creak'); await ui.fade(1, 0.35); }
+      else ui.sfx('door_slide');
+      if (to.set && to.set !== world.setId) { if (kind !== 'wood') await ui.fade(1, 0.25); await loadSet(to.set, to.env); }
+      placeParty(to.mark);
+      if (kind === 'wood' || to.set) ui.fade(0, 0.35);
+    }
+    async function fire(h) {
+      const sel = inventory.selected;
+      let done = true, boiled = false;
+      inventory.selected = null;
+      testLog('hotspot ' + h.id + (sel ? ' use ' + sel : ''));
+      if (sel) {
+        const u = h.use && h.use[sel];
+        if (!u) { await say(state.active, "That won't work."); return; }
+        await runAny(u);
+      } else {
+        if (h.text != null) await speak(h);
+        if (h.kettle) { if (!(await kettle(h))) return; boiled = true; }
+        if (h.ask) {
+          const y = await ask(h.ask.q, h.ask), b = y ? h.ask.yes : h.ask.no;
+          if (b) await runAny(b);
+          if (!y) return;
+        }
+        if (h.steps) await playCutscene(h.steps, { letterbox: false });
+        if (h.door) await door(h);
+        if (h.do) await h.do(ctx());
+        done = !h.use; // a spot with `use` only completes through the right item
+      }
+      if (done && h.flag) setFlag(h.flag, true);
+      if (done && h.once) used.add(h);
+      if (boiled) { saveGame(); ui.toast('Saved.'); }
+    }
+    return {
+      list, used, update,
+      reset() { near = null; holdH = null; },
+      add(h) { list.push(h); },
+      remove(id) { const i = list.findIndex((h) => h.id === id); if (i >= 0) list.splice(i, 1); },
+      trigger(x) { // run a spot by id (autoplay helpers, content)
+        const h = typeof x === 'string' ? list.find((e) => e.id === x) : x;
+        if (!h) { console.warn('RUE: no hotspot ' + x); return Promise.resolve(); }
+        return busyRun(() => fire(h));
+      },
+    };
+  })();
+
+  // ---------------------------------------------------------- inventory
+  const inventory = {
+    selected: null,
+    has: (id) => state.inventory.includes(id),
+    add(id) { if (state.inventory.includes(id)) return; state.inventory.push(id); emit('item:add', id); },
+    remove(id) {
+      const i = state.inventory.indexOf(id);
+      if (i >= 0) state.inventory.splice(i, 1);
+      if (inventory.selected === id) inventory.selected = null;
+    },
+    open() {
+      if (panelOpen) return;
+      const free = (flow.roaming || mg) && !flow.busy && !cutDepth; // actions only in play, never mid-cutscene
+      panelOpen = true;
+      const pe = player.enabled;
+      player.enabled = false; ui.prompt(null); hotspots.reset();
+      const close = () => { panelOpen = false; player.enabled = pe; };
+      const act = (fn) => { close(); if (free) busyRun(fn); };
+      ui.inventoryPanel({
+        items: state.inventory.map((id) => ({ id, name: itemName(id), icon: ITEMS[id] && ITEMS[id].icon })),
+        onExamine: (id) => act(async () => {
+          const it = ITEMS[id] || {};
+          if (it.examine) await runAny(it.examine); else await say(state.active, it.desc || itemName(id));
+          if (it.flip && (await ask(it.flip.q || 'Flip it?', it.flip))) await runAny(it.flip.steps);
+        }),
+        onUse: (id) => { close(); if (free) { inventory.selected = id; ui.toast('Using: ' + itemName(id)); } },
+        onCombine: (a, b) => act(() => {
+          const c = (ITEMS[a] && ITEMS[a].combine && ITEMS[a].combine[b]) || (ITEMS[b] && ITEMS[b].combine && ITEMS[b].combine[a]);
+          return c ? runAny(c) : say(state.active, "That won't work.");
+        }),
+        onClose: close,
+      });
+    },
+  };
+
+  // ---------------------------------------------------------- minigame host
+  function clearOverlay() {
+    const c = ovEl.getContext('2d'), d = devicePixelRatio || 1;
+    c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, ovEl.width, ovEl.height); c.setTransform(d, 0, 0, d, 0, 0);
+  }
+  function minigame(id, params) {
+    const m = MINIGAMES[id];
+    if (!m) { console.warn('RUE: minigame ' + id + ' is not built'); return Promise.resolve({ missing: true }); }
+    testLog('minigame ' + id);
+    clearOverlay(); ovEl.classList.remove('off'); mgEl.textContent = '';
+    return new Promise((res) => {
+      const me = { m, paused: 0, api: null };
+      const api = me.api = {
+        finish(r) {
+          if (mg !== me) return;
+          mg = null;
+          try { if (m.end) m.end(r); } catch (e) { console.error('RUE: minigame ' + id + ' end()', e); }
+          clearOverlay(); ovEl.classList.remove('off'); mgEl.textContent = '';
+          flow.result = r; res(r);
+        },
+        overlay: { canvas: ovEl, ctx: ovEl.getContext('2d'), get w() { return innerWidth; }, get h() { return innerHeight; },
+          show(b) { ovEl.classList.toggle('off', !b); } },
+        ui: mgEl, world, cam, input, sfx: typeof sfx === 'function' ? sfx : sfxFn, AUDIO: audio(), say, ask, choose, popup, hud,
+        async play(steps) { me.paused++; try { await runSteps(steps); } finally { me.paused--; } },
+        params: params || {}, state,
+      };
+      mg = me;
+      try {
+        m.start(api.params, api);
+        if (TEST.auto) {
+          if (m.autoplay) Promise.resolve(m.autoplay(api)).catch((e) => { console.error('RUE: minigame ' + id + ' autoplay()', e); api.finish({ error: true }); });
+          else wait(0.5).then(() => api.finish({ auto: true }));
+        }
+      } catch (e) { console.error('RUE: minigame ' + id + ' start()', e); api.finish({ error: true }); }
+    });
+  }
+
+  // ---------------------------------------------------------- per tick / per frame
+  function tick(dt) {
+    clock.scale = cutDepth && input.held('no') ? 3 : 1; // hold NO to fast-forward a cutscene
+    if (mg && !mg.paused && !panelOpen && !flow.busy && mg.m.update) {
+      try { mg.m.update(dt); } catch (e) { console.error('RUE: minigame update()', e); mg.api.finish({ error: true }); }
+    }
+    if (!flow.roaming || flow.busy || panelOpen || cutDepth) return;
+    if (input.pressed('inventory')) { input.consume('inventory'); inventory.open(); return; }
+    if (flow.swap && input.pressed('swap')) { input.consume('swap'); doSwap(); }
+    hotspots.update(dt);
+  }
+  function draw() {
+    if (!mg || !mg.m.draw) return;
+    try { mg.m.draw(); } catch (e) { console.error('RUE: minigame draw()', e); mg.api.finish({ error: true }); }
+  }
+
+  // ---------------------------------------------------------- roam
+  async function roam(o) {
+    const g = G, u = o.until;
+    const solved = () => {
+      if (typeof u === 'function') return !!u(state);
+      if (Array.isArray(u)) { for (let i = 0; i < u.length; i++) if (!state.flags[u[i]]) return false; return true; }
+      return u ? !!state.flags[u] : false;
+    };
+    if (TEST.auto) {
+      if (o.auto) await o.auto(ctx());
+      else if (typeof u !== 'function') for (const f of [].concat(u || [])) setFlag(f, true);
+      if (u && !solved()) console.warn('RUE: roam auto() left `until` unsolved in ' + flow.sceneId);
+      return;
+    }
+    flow.roaming = true; player.enabled = true; hotspots.reset(); showSwap();
+    const t0 = clock.t;
+    let hinted = !o.hint;
+    await waitUntil(() => {
+      if (g !== G) return true;
+      if (flow.busy || panelOpen || cutDepth) return false;
+      if (solved()) return true;
+      if (!hinted && clock.t - t0 >= (o.hint.after ?? 120)) { hinted = true; busyRun(() => playCutscene(o.hint.steps, { letterbox: false })); }
+      return false;
+    });
+    if (g !== G) return;
+    flow.roaming = false; player.enabled = false; inventory.selected = null;
+    ui.prompt(null); hotspots.reset(); ui.swapIndicator(null);
+  }
+
+  // ---------------------------------------------------------- scenes
+  function sceneStep(st, nx) {
+    const a = st[1], o = st[2] || {};
+    switch (st[0]) {
+      case 'cutscene': {
+        const lb = o.letterbox !== false; // keep the bars and the shot when another cutscene or the scene's end follows
+        return playCutscene(a, { letterbox: lb, keep: lb && (!nx || (nx[0] === 'cutscene' && !(nx[2] && nx[2].letterbox === false))) });
+      }
+      case 'steps': return playCutscene(a, { letterbox: false });
+      case 'objective': if (Array.isArray(a)) objective.list(a); else objective(a); return;
+      case 'control': state.active = a; if (actorOf(a)) player.control(a); showSwap(); return;
+      case 'roam': return roam(a || {});
+      case 'minigame': player.enabled = false; return minigame(a, st[2]);
+      case 'wait': return wait(a);
+      case 'set': return (async () => { const g = G; await ui.fade(1, 0.4); if (g !== G) return; await changeSet(a, o.env, o.spawn); ui.fade(0, 0.5); })();
+      case 'cam': cam.override(a, st[2]); return;
+      case 'swap':
+        flow.swap = !!a; showSwap();
+        if (a) ui.toast(input.scheme === 'pad' ? 'Y — Swap' : input.scheme === 'touch' ? 'SWAP — Swap' : 'TAB — Swap');
+        return;
+      case 'follow': flow.follow = a || null; player.follower(flow.follow); return;
+      case 'do': return a(ctx());
+      case 'save': saveGame(); return;
+    }
+    console.warn('RUE: unknown scene step ' + st[0]);
+  }
+
+  function stop() {
+    G++;
+    if (mg) mg.api.finish({ aborted: true });
+    flow.skipping = false; flow.roaming = false; flow.busy = false; flow.sceneId = null;
+    panelOpen = false; cutDepth = 0; clock.scale = 1; inventory.selected = null;
+    for (const n in loops) { for (const h of loops[n]) h.stop(0.4); loops[n].length = 0; }
+    player.enabled = false;
+    ui.inventoryPanel(null); ui.prompt(null); ui.swapIndicator(null); hotspots.reset();
+    hudEl.style.visibility = ''; silence(false); cam.lock(false);
+  }
+  function toTitle() { stop(); menus.title(); }
+  function theEnd() { testLog('end of built content'); if (TEST.auto) RUE_TEST.done = true; else toTitle(); }
+
+  function next() {
+    const nx = SCENE_ORDER[SCENE_ORDER.indexOf(flow.sceneId) + 1];
+    if (nx && SCENES[nx]) return start(nx);
+    theEnd();
+  }
+
+  async function start(id, o = {}) {
+    if (!inited) { inited = true; addUpdate(tick); on('render', draw); }
+    stop();
+    const g = G, sc = SCENES[id];
+    flow.sceneId = id; flow.scene = sc || null; flow.stepIndex = 0; flow.result = null;
+    RUE_TEST.scene = id; RUE_TEST.step = null;
+    testLog('scene ' + id);
+    if (!sc) { console.warn('RUE: scene ' + id + ' is not built'); return theEnd(); }
+    try {
+      if (o.select) { // scene select: a fresh state plus everything earlier scenes guarantee
+        state = newState();
+        for (const x of SCENE_ORDER) { if (x === id) break; if (SCENES[x] && SCENES[x].grants) grant(SCENES[x].grants); }
+      }
+      state.scene = id;
+      await ui.fade(1, 0.5);
+      if (g !== G) return;
+      popup.clear(); ui.card(null); cardOn = false; objective(null); ui.letterbox(false);
+      if (cam.cutscene) cam.release(0);
+      cam.override(null); world.split(null);
+      despawnAll();
+      if (sc.set) await loadSet(sc.set, sc.env);
+      if (g !== G) return;
+      if (sc.spawn) spawnMap(sc.spawn);
+      const pl = sc.playable || [];
+      if (pl.length && !pl.includes(state.active)) state.active = pl[0];
+      flow.swap = !!sc.swap; flow.follow = null; player.follower(null);
+      recontrol();
+      hud.set('hud' in sc ? sc.hud : { battery: state.battery, bars: state.bars });
+      if ('music' in sc) mus(sc.music);
+      hotspots.list.length = 0; hotspots.used.clear();
+      if (sc.hotspots) hotspots.list.push(...sc.hotspots);
+      if (id !== 'P') saveGame(); // Continue resumes at the start of this scene
+      if (ACTS[id]) await ui.actCard(ACTS[id]);
+      if (sc.title) await ui.title(sc.title);
+      if (g !== G) return;
+      ui.fade(0, 0.8); // the first step runs in this same tick, so an opening shot (or {fade}) wins
+      const steps = sc.steps || [];
+      for (let i = 0; i < steps.length; i++) {
+        if (g !== G) return;
+        const st = steps[i];
+        flow.stepIndex = i; RUE_TEST.step = i + ' ' + st[0];
+        testLog('scene ' + id + ' step ' + i + ' ' + st[0] + (typeof st[1] === 'string' ? ' ' + st[1] : ''));
+        try { await sceneStep(st, steps[i + 1]); } catch (e) { console.error('RUE: scene ' + id + ' step ' + i + ' (' + st[0] + ') failed', e); }
+      }
+      if (g !== G) return;
+    } catch (e) { console.error('RUE: scene ' + id + ' failed', e); return; }
+    emit('scene:end', { id });
+    testLog('scene ' + id + ' end');
+    if (TEST.auto && (id === TEST.stop || id === 'PC')) { RUE_TEST.done = true; return; }
+    if (id === 'PC') { profile.completed = true; saveOptions(); return toTitle(); }
+    if (id === 'P' && !TEST.auto) return toTitle();
+    next();
+  }
+
+  const flow = {
+    skipping: false, scene: null, sceneId: null, stepIndex: 0, result: null,
+    swap: false, follow: null, roaming: false, busy: false,
+    start, next, stop, minigame,
+    skip() { // pause menu: run the rest of this cutscene instantly (state steps still apply)
+      if (!cutDepth) return;
+      flow.skipping = true; popup.clear();
+      if (cardOn) { ui.card(null); cardOn = false; }
+    },
+  };
+
+  return { flow, hotspots, inventory, runSteps, playCutscene };
+})();
 // ============================================================ MINIGAMES: JARVIS Sale + Restart Ritual
 // DOM mini-games inside a JARVIS app window, the big sibling of popup() (SPEC §7, §14 Tuning, §16).
 // No top-level names: this IIFE only assigns MINIGAMES.jarvis_sale and MINIGAMES.restart_ritual.
@@ -4839,6 +6611,1034 @@ Object.assign(CARDS, (() => {
     return M;
   })();
 })();
+// ============================================================ MINIGAMES: Tether Rip (1.4), Wiring (1.5, 2.6)
+// Overlay mini-games (SPEC §14 Tuning). Everything private to each IIFE; no top-level names.
+
+MINIGAMES.tether = (() => {
+  const SPEED = [1.2, 1.5, 1.9, 2.4], ZONE = [0.22, 0.18, 0.14, 0.10], MID = [0.5, 0.64, 0.38, 0.57];
+  const teth = [null, null, null, null], base = [0, 0, 0, 0], rippedAt = [-1, -1, -1, -1], twangAt = [-1, -1, -1, -1];
+  let api, p, ov, ctx, W = 0, H = 0, vign = null, light = null, chase = null, alarms = [], wall = 0;
+  let phone = 0, misses = 0, zone = 0, pos = 0, dir = 1, lock = 0, shake = 0, hitT = 0, hz0 = 0, hz1 = 0, busy = false, endT = -1, done = true;
+
+  function init(params, a) {
+    api = a; p = params || a.params || {}; ov = a.overlay; ctx = ov && ov.ctx;
+    alarms = []; done = false; busy = false; endT = -1; phone = 0; hitT = 0; shake = 0; W = 0;
+    chase = a.world.actor('chase') || null;
+    light = a.world.prop('alarm_light') || null;
+    for (let i = 0; i < 4; i++) {
+      teth[i] = a.world.prop('tether_' + (i + 1)) || null;
+      base[i] = teth[i] ? teth[i].rotation.x : 0; rippedAt[i] = twangAt[i] = -1;
+    }
+    nextPhone();
+  }
+  function nextPhone() { misses = 0; zone = ZONE[phone] || 0.1; pos = 0; dir = 1; lock = 0.2; }
+
+  function rip() {
+    const n = phone + 1;
+    api.sfx('rip');
+    const pr = api.world.prop('display_phone_' + n); if (pr) pr.visible = false;
+    rippedAt[phone] = performance.now() / 1000;
+    const h = api.AUDIO && api.AUDIO.loop && api.AUDIO.loop('alarm', { vol: 0.45 });
+    if (h) alarms.push(h);
+    if (light) light.visible = true;
+    if (chase) chase.play('pull', { loop: false, dur: 0.4 });
+    hitT = 0.45; hz0 = Math.max(0, MID[phone] - zone / 2); hz1 = Math.min(1, MID[phone] + zone / 2); phone++;
+    if (phone === 4) { endT = 0.9; return; }
+    nextPhone();
+    const steps = phone === 1 ? p.lines && p.lines.after1 : phone === 3 ? p.lines && p.lines.after3 : null;
+    if (steps && steps.length) {
+      busy = true;
+      api.play(steps).then(() => { busy = false; if (p.shot) api.cam.shot(p.shot); });
+    }
+  }
+
+  function finish() {
+    if (done) return;
+    done = true;
+    if (chase) chase.play('carry');
+    api.finish({ rips: 4, alarms: p.keepAlarms !== false ? alarms : [] }); // end() stops any not handed over
+  }
+
+  return {
+    start(params, a) {
+      init(params, a);
+      if (p.shot) a.cam.shot(p.shot);
+      ov.show(true);
+    },
+    update(dt) {
+      if (done) return;
+      if (endT >= 0) { endT -= dt; if (endT < 0) finish(); return; }
+      if (hitT > 0) hitT -= dt;
+      if (shake > 0) shake -= dt;
+      if (busy) return;
+      pos += dir * SPEED[phone] * dt;
+      if (pos > 1) { pos = 2 - pos; dir = -1; } else if (pos < 0) { pos = -pos; dir = 1; }
+      if (lock > 0) { lock -= dt; return; }
+      if (!api.input.pressed('yes')) return;
+      if (Math.abs(pos - MID[phone]) <= zone / 2) { rip(); return; }
+      // miss: the cable twangs, Chase stumbles and goes again
+      api.sfx('twang');
+      twangAt[phone] = performance.now() / 1000;
+      if (chase) chase.play(misses & 1 ? 'turn' : 'shrug', { loop: false, dur: 0.35 });
+      shake = 0.3; lock = 0.35;
+      if (++misses === 3) zone = ZONE[phone] * 2;
+    },
+    draw() {
+      if (done || !ctx) return;
+      // cosmetic 3D bits on wall time, so they keep moving while api.play() pauses update()
+      const now = performance.now() / 1000, fdt = Math.min(0.1, wall ? now - wall : 0); wall = now;
+      for (let i = 0; i < 4; i++) {
+        const tt = teth[i]; if (!tt) continue;
+        const r = rippedAt[i] >= 0, a = r ? now - rippedAt[i] : twangAt[i] >= 0 ? now - twangAt[i] : 9;
+        tt.rotation.x = a < 4 ? base[i] + (r ? 0.6 : 0.18) * Math.exp(-1.4 * a) * Math.sin(a * 11) : base[i];
+      }
+      if (light && alarms.length) light.rotation.y += fdt * (options.reduceFlashing ? 1.5 : 6);
+
+      const w = innerWidth, h = innerHeight;
+      if (w !== W || h !== H) {
+        W = w; H = h;
+        vign = ctx.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.15, W / 2, H * 0.45, Math.max(W, H) * 0.75);
+        vign.addColorStop(0, 'rgba(255,30,20,0.4)'); vign.addColorStop(1, 'rgba(230,0,0,1)');
+      }
+      const s = ov.canvas.width / W;
+      ctx.setTransform(s, 0, 0, s, 0, 0); ctx.clearRect(0, 0, W, H);
+
+      // red alarm wash: a 2 Hz pulse per the siren, softer and slower with Reduce Flashing
+      const n = alarms.length;
+      if (n) {
+        const rf = options.reduceFlashing;
+        const k = 0.5 + 0.5 * Math.sin(now * Math.PI * (rf ? 1 : 4));
+        ctx.globalAlpha = rf ? (0.08 + 0.03 * n) * (0.7 + 0.3 * k) : (0.16 + 0.1 * n) * (0.3 + 0.7 * k);
+        ctx.fillStyle = vign; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+      }
+      if (busy) return;
+
+      // the bar, bottom centre
+      const bw = Math.min(520, W - 72), bh = 26;
+      const bx = (W - bw) / 2 + (shake > 0 ? Math.sin(shake * 70) * 7 * shake / 0.3 : 0);
+      const by = H - (api.input.scheme === 'touch' ? 252 : 92);
+      ctx.fillStyle = 'rgba(20,29,58,0.88)';
+      ctx.beginPath(); ctx.roundRect(bx - 18, by - 46, bw + 36, bh + 76, 12); ctx.fill();
+      ctx.fillStyle = CONFIG.colors.yes; ctx.fillRect(bx - 6, by - 46, bw + 12, 2);
+      ctx.font = 'bold 15px "Trebuchet MS", "Segoe UI", system-ui, sans-serif';
+      ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      ctx.fillText('RIP THE TETHER', bx, by - 22);
+      // four little phones: ripped ones in yellow, the current one outlined
+      for (let i = 0; i < 4; i++) {
+        const x = bx + bw - 88 + i * 23, y = by - 33;
+        ctx.beginPath(); ctx.roundRect(x, y, 14, 22, 3);
+        if (i < phone) { ctx.fillStyle = CONFIG.colors.yes; ctx.fill(); }
+        else { ctx.lineWidth = 2; ctx.strokeStyle = i === phone ? '#fff' : 'rgba(255,255,255,0.3)'; ctx.stroke(); }
+      }
+      // track, green zone, needle
+      ctx.fillStyle = '#0b1026'; ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 7); ctx.fill();
+      if (phone < 4) {
+        let z0 = MID[phone] - zone / 2, z1 = MID[phone] + zone / 2;
+        if (z0 < 0) z0 = 0; if (z1 > 1) z1 = 1;
+        ctx.fillStyle = '#34d26a';
+        ctx.beginPath(); ctx.roundRect(bx + z0 * bw, by + 2, (z1 - z0) * bw, bh - 4, 5); ctx.fill();
+      }
+      if (hitT > 0) { // the zone that was just hit flashes white
+        ctx.globalAlpha = hitT / 0.45; ctx.fillStyle = '#f4fff4';
+        ctx.beginPath(); ctx.roundRect(bx + hz0 * bw, by - 3, (hz1 - hz0) * bw, bh + 6, 6); ctx.fill(); ctx.globalAlpha = 1;
+      }
+      const nx = bx + (phone < 4 ? pos : MID[3]) * bw;
+      ctx.fillStyle = shake > 0 ? '#ff5a4e' : '#fff';
+      ctx.fillRect(nx - 2, by - 6, 4, bh + 12);
+      ctx.beginPath(); ctx.moveTo(nx - 7, by - 12); ctx.lineTo(nx + 7, by - 12); ctx.lineTo(nx, by - 4); ctx.fill();
+      // hint line
+      ctx.font = '14px "Trebuchet MS", "Segoe UI", system-ui, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillStyle = shake > 0 ? '#ff8a80' : '#c9d2ea';
+      ctx.fillText(phone >= 4 ? 'All four.' : shake > 0 ? 'Missed! Again!' : misses >= 3 ? 'YES in the green (bigger now)' : 'YES when the needle is in the green', W / 2, by + bh + 16);
+    },
+    end(r) {
+      done = true;
+      if (!r || r.alarms !== alarms) for (const h of alarms) h.stop(0.4);
+      alarms = [];
+      for (let i = 0; i < 4; i++) if (teth[i]) teth[i].rotation.x = base[i];
+      if (ctx) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, ov.canvas.width, ov.canvas.height); }
+      if (ov) ov.show(false);
+    },
+    autoplay(a) { // same end state: four phones gone, four alarms layered
+      init(a.params, a);
+      for (let i = 0; i < 4; i++) {
+        const pr = a.world.prop('display_phone_' + (i + 1)); if (pr) pr.visible = false;
+        const h = a.AUDIO && a.AUDIO.loop && a.AUDIO.loop('alarm', { vol: 0.45 }); if (h) alarms.push(h);
+      }
+      if (light) light.visible = true;
+      a.sfx('rip');
+      finish();
+    },
+  };
+})();
+
+MINIGAMES.wiring = (() => {
+  // Board in design units (800 x 480), rotated 90° on portrait screens. Corridors are polylines;
+  // their width is in screen px (SPEC: ~26 px), so the metal gap between them is kept >= 66 units.
+  const BW = 800, BH = 480;
+  const L = {
+    machine: {
+      title: 'WIRE THE MACHINE',
+      colors: ['#ef4b4b', '#ffd21f', '#3b8cff', '#34c96b'],
+      wires: [
+        [118, 75, 200, 75, 200, 53, 330, 53, 330, 97, 470, 97, 470, 53, 590, 53, 590, 75, 712, 75],
+        [118, 185, 170, 185, 170, 207, 280, 207, 280, 163, 420, 163, 420, 207, 540, 207, 540, 163, 640, 163, 640, 185, 712, 185],
+        [118, 295, 240, 295, 240, 317, 360, 317, 360, 273, 510, 273, 510, 317, 620, 317, 620, 295, 712, 295],
+        [118, 405, 190, 405, 190, 383, 300, 383, 300, 427, 450, 427, 450, 383, 580, 383, 580, 427, 650, 427, 650, 405, 712, 405],
+      ],
+    },
+    charger: {
+      title: 'WIRE THE CHARGER',
+      colors: ['#ef4b4b', '#3b8cff', '#f4f4f4'],
+      wires: [
+        [140, 196, 180, 196, 180, 70, 250, 70, 250, 130, 290, 130, 290, 200, 318, 200],
+        [140, 284, 180, 284, 180, 410, 250, 410, 250, 350, 290, 350, 290, 280, 318, 280],
+        [736, 240, 700, 240, 700, 110, 610, 110, 610, 370, 540, 370, 540, 240, 482, 240],
+      ],
+    },
+  };
+  const PH = ['#1d1e24', '#52698f', '#8e949b', '#ecebe6']; // four generic phones, no logos
+  const SP = [new Float32Array(32), new Float32Array(32), new Float32Array(32), new Float32Array(32)]; // screen pts
+  const CUM = [new Float32Array(16), new Float32Array(16), new Float32Array(16), new Float32Array(16)]; // arc length
+  const NP = [0, 0, 0, 0], HW = [13, 13, 13, 13], WZ = [0, 0, 0, 0], OK = [false, false, false, false];
+  const PX = [0, 0, 0, 0], PY = [0, 0, 0, 0], WS = [0, 0, 0, 0], QX = [0, 0, 0, 0], QY = [0, 0, 0, 0];
+  const SPK = new Float32Array(24 * 5); // sparks: x, y, vx, vy, life
+  const DASH = [3, 7], NODASH = [];
+  const FONT = '"Trebuchet MS", "Segoe UI", system-ui, sans-serif', HAND = '"Segoe Print", "Bradley Hand", "Comic Sans MS", cursive';
+  let api, ov, ctx, lay, nw = 0, W = 0, H = 0, sc = 1, ox = 0, oy = 0, rot = false, touchEl = null, sch = '', hx = 0;
+  let cx = 0, cy = 0, lpx = -1, lpy = -1, grab = -1, gox = 0, goy = 0, stun = 0, zaps = 0, conn = 0;
+  let t = 0, nextBlack = 8, black = 0, endT = -1, done = true, status = '', hint = '', fBig = '', fSmall = '', fHand = '';
+  let qx = 0, qy = 0, qs = 0, zx = 0, zy = 0, zt = 0;
+
+  const mx = (x, y) => rot ? ox + (BH - y) * sc : ox + x * sc;
+  const my = (x, y) => rot ? oy + x * sc : oy + y * sc;
+  function box(x0, y0, x1, y1, r) { // a design-space rect, mapped
+    const a = mx(x0, y0), b = my(x0, y0), c = mx(x1, y1), d = my(x1, y1);
+    ctx.beginPath(); ctx.roundRect(Math.min(a, c), Math.min(b, d), Math.abs(c - a), Math.abs(d - b), r);
+  }
+
+  function layout() {
+    const touch = sch === 'touch', top = touch ? 118 : 78, bottom = touch ? 200 : 20, ah = H - top - bottom;
+    hx = W < 600 ? 16 : W / 2; setStatus();
+    rot = H > W;
+    sc = rot ? Math.min((W - 20) / BH, ah / BW) : Math.min((W - 24) / BW, ah / BH);
+    ox = (W - (rot ? BH : BW) * sc) / 2; oy = top + (ah - (rot ? BW : BH) * sc) / 2;
+    for (let i = 0; i < nw; i++) {
+      const d = lay.wires[i], a = SP[i], c = CUM[i], n = d.length / 2;
+      NP[i] = n; c[0] = 0;
+      for (let k = 0; k < n; k++) {
+        a[2 * k] = mx(d[2 * k], d[2 * k + 1]); a[2 * k + 1] = my(d[2 * k], d[2 * k + 1]);
+        if (k) c[k] = c[k - 1] + Math.hypot(a[2 * k] - a[2 * k - 2], a[2 * k + 1] - a[2 * k - 1]);
+      }
+      const e = OK[i] ? 2 * (n - 1) : 0;
+      PX[i] = a[e]; PY[i] = a[e + 1]; QX[i] = a[e]; QY[i] = a[e + 1]; WS[i] = OK[i] ? c[n - 1] : 0;
+    }
+    grab = -1;
+    const k = Math.max(0.7, Math.min(1.25, sc));
+    fBig = 'bold ' + Math.round(17 * Math.min(1, k)) + 'px ' + FONT; fSmall = Math.round(13 * Math.min(1, k)) + 'px ' + FONT;
+    fHand = 'bold ' + Math.round(40 * sc) + 'px ' + HAND;
+  }
+
+  // distance from (x, y) to wire i's centreline; leaves the closest point in qx, qy and its arc length in qs
+  function near(i, x, y) {
+    const a = SP[i], c = CUM[i], n = NP[i];
+    let best = 1e12;
+    for (let k = 0; k < n - 1; k++) {
+      const x0 = a[2 * k], y0 = a[2 * k + 1], dx = a[2 * k + 2] - x0, dy = a[2 * k + 3] - y0, l2 = dx * dx + dy * dy;
+      let u = l2 ? ((x - x0) * dx + (y - y0) * dy) / l2 : 0; u = u < 0 ? 0 : u > 1 ? 1 : u;
+      const px = x0 + u * dx, py = y0 + u * dy, d = (x - px) * (x - px) + (y - py) * (y - py);
+      if (d < best) { best = d; qx = px; qy = py; qs = c[k] + u * (c[k + 1] - c[k]); }
+    }
+    return Math.sqrt(best);
+  }
+
+  function setStatus() {
+    status = conn + ' / ' + nw + ' connected' + (zaps ? '   ·   zaps ' + zaps : '');
+    const s = api.input.scheme;
+    hint = s === 'touch' ? "Drag plugs to terminals. Don't touch the metal."
+      : s === 'pad' ? 'Hold A to grab a plug, steer with the stick.'
+      : W < 600 ? "Drag plugs to terminals. Don't touch the metal."
+      : "Drag each plug to its matching terminal. Don't touch the metal. (Keys: hold YES, steer with arrows)";
+  }
+
+  function zap(i) {
+    api.sfx('zap');
+    for (let k = 0; k < 24; k++) {
+      const o = k * 5, a = Math.random() * 6.283, v = 60 + Math.random() * 260;
+      SPK[o] = PX[i]; SPK[o + 1] = PY[i]; SPK[o + 2] = Math.cos(a) * v; SPK[o + 3] = Math.sin(a) * v; SPK[o + 4] = 0.25 + Math.random() * 0.35;
+    }
+    zx = PX[i]; zy = PY[i]; zt = 0.8;
+    zaps++; if (++WZ[i] === 3) HW[i] *= 1.5;
+    PX[i] = QX[i] = SP[i][0]; PY[i] = QY[i] = SP[i][1]; WS[i] = 0;
+    grab = -1; stun = 1; setStatus();
+  }
+
+  function finish() { if (done) return; done = true; api.finish({ zaps }); }
+
+  return {
+    start(params, a) {
+      api = a; ov = a.overlay; ctx = ov.ctx; lay = L[(params || a.params || {}).layout] || L.machine; nw = lay.wires.length;
+      for (let i = 0; i < 4; i++) { HW[i] = 13; WZ[i] = 0; OK[i] = false; }
+      for (let k = 0; k < SPK.length; k += 5) SPK[k + 4] = 0;
+      zaps = conn = 0; stun = 0; grab = -1; t = 0; black = 0; endT = -1; zt = 0; done = false; W = H = 0; sch = '';
+      nextBlack = 6 + Math.random() * 4;
+      touchEl = document.getElementById('touch');
+      cx = innerWidth / 2; cy = innerHeight / 2; lpx = a.input.pointer.x; lpy = a.input.pointer.y;
+      setStatus();
+      ov.show(true);
+    },
+    update(dt) {
+      if (done) return;
+      const s = api.input.scheme; // touch changes the margins; kb <-> pad only changes the hint
+      if (W !== innerWidth || H !== innerHeight || (s === 'touch') !== (sch === 'touch')) { W = innerWidth; H = innerHeight; sch = s; layout(); }
+      else if (s !== sch) { sch = s; setStatus(); }
+      t += dt;
+      for (let k = 0; k < SPK.length; k += 5) if (SPK[k + 4] > 0) {
+        SPK[k] += SPK[k + 2] * dt; SPK[k + 1] += SPK[k + 3] * dt; SPK[k + 2] *= 0.9; SPK[k + 3] *= 0.9; SPK[k + 4] -= dt;
+      }
+      if (zt > 0) zt -= dt;
+      if (lay === L.machine) { // the flickering tube: 0.5 s blackout every 6–10 s
+        if (black > 0) black -= dt;
+        else if (t >= nextBlack) { black = 0.5; nextBlack = t + 6.5 + Math.random() * 4; api.sfx('tube_flicker'); }
+      }
+      if (endT >= 0) { endT -= dt; if (endT < 0) finish(); return; }
+
+      const I = api.input, P = I.pointer;
+      const ptrOk = !(touchEl && P.over && touchEl.contains(P.over)); // on-screen stick/buttons also move the pointer
+      if (ptrOk && (P.x !== lpx || P.y !== lpy || P.pressed)) { cx = P.x; cy = P.y; }
+      lpx = P.x; lpy = P.y;
+      const m = I.move;
+      if (m.x || m.y) { cx += m.x * 230 * dt; cy -= m.y * 230 * dt; cx = cx < 0 ? 0 : cx > W ? W : cx; cy = cy < 0 ? 0 : cy > H ? H : cy; }
+      if (stun > 0) { stun -= dt; return; }
+      const down = I.held('yes') || (ptrOk && P.down);
+
+      if (grab < 0) {
+        const ptr = ptrOk && P.pressed;
+        if (!ptr && !I.pressed('yes')) return;
+        let best = -1, bd = ptr ? 34 : 40;
+        for (let i = 0; i < nw; i++) if (!OK[i]) { const d = Math.hypot(PX[i] - cx, PY[i] - cy); if (d < bd) { bd = d; best = i; } }
+        if (best < 0 && !ptr) for (let i = 0; i < nw; i++) if (!OK[i]) { best = i; cx = PX[i]; cy = PY[i]; break; } // keys: jump to the next plug
+        if (best < 0) return;
+        grab = best; gox = PX[best] - cx; goy = PY[best] - cy;
+        api.sfx('clunk', { vol: 0.4 });
+        return;
+      }
+      if (!down) { grab = -1; return; }
+      // drag the plug towards the cursor in small steps, checking the corridor all the way
+      const i = grab, tx = cx + gox, ty = cy + goy, dx = tx - PX[i], dy = ty - PY[i], n = Math.ceil(Math.hypot(dx, dy) / 3);
+      const a = SP[i], e = 2 * (NP[i] - 1);
+      for (let k = 0; k < n; k++) {
+        const x = PX[i] + dx / n, y = PY[i] + dy / n;
+        if (near(i, x, y) > HW[i]) { PX[i] = x; PY[i] = y; zap(i); return; }
+        PX[i] = x; PY[i] = y; QX[i] = qx; QY[i] = qy; WS[i] = qs;
+        if (Math.hypot(x - a[e], y - a[e + 1]) < 9) {
+          OK[i] = true; PX[i] = QX[i] = a[e]; PY[i] = QY[i] = a[e + 1]; WS[i] = CUM[i][NP[i] - 1];
+          grab = -1; conn++; setStatus(); api.sfx('pop');
+          if (conn === nw) endT = 0.8;
+          return;
+        }
+      }
+    },
+    draw() {
+      if (done || !ctx || !W) return;
+      const s = ov.canvas.width / W;
+      ctx.setTransform(s, 0, 0, s, 0, 0); ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = 'rgba(8,10,18,0.78)'; ctx.fillRect(0, 0, W, H);
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.textBaseline = 'middle';
+
+      // header
+      ctx.textAlign = hx === 16 ? 'left' : 'center'; ctx.fillStyle = CONFIG.colors.yes; ctx.font = fBig;
+      ctx.fillText(lay.title, hx, 24);
+      ctx.fillStyle = '#fff'; ctx.font = fSmall; ctx.fillText(status, hx, 45);
+      ctx.fillStyle = '#9aa6c4'; ctx.fillText(hint, hx, 64);
+
+      // the metal plate
+      box(0, 0, BW, BH, 14 * sc); ctx.fillStyle = '#5d6672'; ctx.fill();
+      box(6, 6, BW - 6, BH - 6, 10 * sc); ctx.fillStyle = '#8b949f'; ctx.fill();
+      ctx.fillStyle = '#6f7883';
+      for (let k = 0; k < 4; k++) { ctx.beginPath(); ctx.arc(mx(k & 1 ? BW - 20 : 20, k & 2 ? BH - 20 : 20), my(k & 1 ? BW - 20 : 20, k & 2 ? BH - 20 : 20), 5 * sc, 0, 6.283); ctx.fill(); }
+
+      // components
+      if (lay === L.machine) {
+        for (let i = 0; i < 4; i++) {
+          const y = 75 + i * 110;
+          box(22, y - 30, 108, y + 30, 9 * sc); ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fill();
+          box(18, y - 34, 104, y + 26, 9 * sc); ctx.fillStyle = PH[i]; ctx.fill();
+          box(26, y - 26, 96, y + 18, 4 * sc); ctx.fillStyle = '#0d1422'; ctx.fill();
+          ctx.fillStyle = '#ff5a4e'; ctx.font = fSmall; ctx.textAlign = 'center'; ctx.fillText('3%', mx(61, y - 4), my(61, y - 4));
+          box(52, y + 20, 70, y + 23, 2); ctx.fillStyle = i === 3 ? '#b9b8b2' : 'rgba(255,255,255,0.35)'; ctx.fill();
+          box(104, y - 6, 120, y + 6, 2); ctx.fillStyle = '#222'; ctx.fill();
+        }
+        box(676, 18, 784, BH - 18, 10 * sc); ctx.fillStyle = '#b8c0c9'; ctx.fill();
+        box(728, 30, 774, BH - 30, 8 * sc); ctx.fillStyle = '#141d3a'; ctx.fill();
+        ctx.save(); ctx.translate(mx(751, 240), my(751, 240)); if (!rot) ctx.rotate(-Math.PI / 2);
+        ctx.fillStyle = CONFIG.colors.yes; ctx.font = fHand; ctx.textAlign = 'center'; ctx.fillText('Yes', 0, 0); ctx.restore();
+      } else {
+        ctx.save(); box(6, 6, BW - 6, BH - 6, 10 * sc); ctx.clip();
+        ctx.beginPath(); ctx.arc(mx(-120, 240), my(-120, 240), 205 * sc, 0, 6.283);
+        ctx.lineWidth = 26 * sc; ctx.strokeStyle = '#26282d'; ctx.stroke();
+        ctx.lineWidth = 5 * sc; ctx.strokeStyle = '#a4acb6'; ctx.beginPath(); ctx.arc(mx(-120, 240), my(-120, 240), 188 * sc, 0, 6.283); ctx.stroke();
+        ctx.restore();
+        box(96, 206, 146, 274, 10 * sc); ctx.fillStyle = '#c9ced4'; ctx.fill();
+        box(84, 226, 98, 254, 3); ctx.fillStyle = '#50565e'; ctx.fill();
+        box(330, 150, 470, 330, 12 * sc); ctx.fillStyle = '#6b4a35'; ctx.fill();
+        box(338, 158, 462, 322, 8 * sc); ctx.fillStyle = '#80593f'; ctx.fill();
+        ctx.beginPath(); ctx.arc(mx(400, 240), my(400, 240), 38 * sc, 0, 6.283); ctx.fillStyle = '#efe6cf'; ctx.fill();
+        ctx.lineWidth = 5 * sc; ctx.strokeStyle = '#3a2a20'; ctx.beginPath(); ctx.moveTo(mx(400, 240), my(400, 240)); ctx.lineTo(mx(420, 212), my(420, 212)); ctx.stroke();
+        box(752, 232, BW, 248, 3); ctx.fillStyle = '#f4f4f4'; ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = fSmall; ctx.textAlign = 'center';
+        ctx.fillStyle = '#3a4150'; ctx.fillText('DYNAMO', mx(121, 240), my(121, 240)); ctx.fillStyle = '#fff';
+        ctx.fillText('TRANSFORMER', mx(400, 342), my(400, 342));
+        ctx.fillText('CABLE', mx(772, 212), my(772, 212));
+      }
+
+      // corridors: bevel, channel, dashed guide
+      for (let i = 0; i < nw; i++) {
+        const a = SP[i], n = NP[i];
+        ctx.beginPath(); ctx.moveTo(a[0], a[1]); for (let k = 1; k < n; k++) ctx.lineTo(a[2 * k], a[2 * k + 1]);
+        ctx.lineWidth = HW[i] * 2 + 5; ctx.strokeStyle = '#c3cad2'; ctx.stroke();
+        ctx.lineWidth = HW[i] * 2; ctx.strokeStyle = '#1b2029'; ctx.stroke();
+        ctx.setLineDash(DASH); ctx.lineWidth = 2; ctx.strokeStyle = '#39424f'; ctx.stroke(); ctx.setLineDash(NODASH);
+      }
+      // terminals, wires, plugs
+      for (let i = 0; i < nw; i++) {
+        const a = SP[i], n = NP[i], e = 2 * (n - 1), col = lay.colors[i];
+        ctx.beginPath(); ctx.arc(a[e], a[e + 1], 12, 0, 6.283); ctx.fillStyle = '#dfe3e8'; ctx.fill();
+        ctx.lineWidth = 4; ctx.strokeStyle = col; ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(a[0], a[1]);
+        for (let k = 1; k < n && CUM[i][k] < WS[i]; k++) ctx.lineTo(a[2 * k], a[2 * k + 1]);
+        ctx.lineTo(QX[i], QY[i]); ctx.lineTo(PX[i], PY[i]);
+        ctx.lineWidth = 6; ctx.strokeStyle = col; ctx.stroke();
+        ctx.beginPath(); ctx.arc(PX[i], PY[i], OK[i] ? 7 : 9, 0, 6.283); ctx.fillStyle = col; ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = i === grab ? '#fff' : 'rgba(0,0,0,0.45)'; ctx.stroke();
+        if (OK[i]) { ctx.beginPath(); ctx.arc(a[e], a[e + 1], 16, 0, 6.283); ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke(); }
+      }
+      // sparks + ZAP!
+      ctx.lineWidth = 2; ctx.strokeStyle = '#fff6a8'; ctx.beginPath();
+      for (let k = 0; k < SPK.length; k += 5) if (SPK[k + 4] > 0) { ctx.moveTo(SPK[k], SPK[k + 1]); ctx.lineTo(SPK[k] - SPK[k + 2] * 0.03, SPK[k + 1] - SPK[k + 3] * 0.03); }
+      ctx.stroke();
+      if (zt > 0.5) { ctx.globalAlpha = (zt - 0.5) * 2.5; ctx.fillStyle = '#fff3a0'; ctx.beginPath(); ctx.arc(zx, zy, 30 * (1.3 - zt), 0, 6.283); ctx.fill(); ctx.globalAlpha = 1; }
+      if (zt > 0) { ctx.globalAlpha = Math.min(1, zt * 2); ctx.fillStyle = '#ffe14a'; ctx.font = fBig; ctx.textAlign = 'center'; ctx.fillText('ZAP!', zx, zy - 26); ctx.globalAlpha = 1; }
+      // cursor
+      ctx.beginPath(); ctx.arc(cx, cy, 13, 0, 6.283); ctx.lineWidth = 2.5;
+      ctx.strokeStyle = stun > 0 ? '#ff5a4e' : grab >= 0 ? CONFIG.colors.yes : 'rgba(255,255,255,0.85)'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, 6.283); ctx.fillStyle = ctx.strokeStyle; ctx.fill();
+
+      // the tube blacks out (a soft fade with Reduce Flashing)
+      if (black > 0) {
+        const u = 1 - black / 0.5;
+        ctx.globalAlpha = options.reduceFlashing ? 0.8 * Math.sin(u * Math.PI) : (u < 0.1 || (u > 0.18 && u < 0.26) ? 0.55 : 0.95);
+        ctx.fillStyle = '#030406'; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+      }
+    },
+    end() {
+      done = true;
+      if (ctx) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, ov.canvas.width, ov.canvas.height); }
+      if (ov) ov.show(false);
+    },
+    autoplay(a) { done = true; a.finish({ zaps: 0 }); },
+  };
+})();
+// ============================================================ MINIGAME: Pedal Power (2.6, reused in 3.1)
+// 100 BPM bleep beat. Alternate two buttons on the beat: in-time presses pull the speed meter
+// towards the green band, mashing between beats spins it up, missed beats and friction slow it.
+// Progress fills only in the green (~45 s a session). >90% for over a second = sparks, -10% progress.
+
+MINIGAMES.pedal = (() => {
+  const BEAT = 0.6, T0 = 1.2, WIN = 0.16, FAIL = 70, FILL = 100 / 42;
+  const F = '"Trebuchet MS", "Segoe UI", system-ui, sans-serif';
+  const F12 = '12px ' + F, F13 = '13px ' + F, F14B = 'bold 14px ' + F, F15B = 'bold 15px ' + F, F16B = 'bold 16px ' + F;
+  const SPK = new Float32Array(20 * 5);
+  let api, p, ov, ctx, W = 0, H = 0, sch = '', rider = null, dyn = null, done = true;
+  let lo = 55, hi = 80, target = 77, t = 0, m = 0, prog = 0, over = 0, beeped = 0, judged = 0, hitK = -1, last = -1;
+  let fb = 0, fbTxt = '', beatFlash = 0, spin = 0, sparkT = 0, endT = -1, lastSpd = -1, lastRate = -1;
+  let session = 1, labA = '', labB = '', sessTxt = '', pctTxt = '', pctN = -1, hintTxt = '';
+
+  function labels() {
+    const s = sch = api.input.scheme;
+    labA = s === 'pad' ? 'A' : s === 'touch' ? 'YES' : '←'; labB = s === 'pad' ? 'B' : s === 'touch' ? 'NO' : '→';
+    hintTxt = s === 'kb' ? 'Alternate ← → (or YES / NO) on the beep' : 'Alternate ' + labA + ' and ' + labB + ' on the beep';
+  }
+
+  function finish(r) { if (done) return; done = true; if (dyn) dyn.stop(0.5); dyn = null; api.finish(r); }
+
+  function win(a) {
+    state.battery = (state.battery || 0) + 1;
+    a.hud.set({ battery: state.battery, bars: state.bars });
+  }
+
+  return {
+    start(params, a) {
+      api = a; p = params || a.params || {}; ov = a.overlay; ctx = ov.ctx; done = false; W = 0;
+      const b = p.band || [55, 80]; lo = b[0]; hi = b[1]; target = (lo + hi) / 2 + 10; session = p.session || 1;
+      t = m = prog = over = 0; beeped = judged = 0; hitK = last = -1; fb = beatFlash = spin = sparkT = 0; endT = -1; lastSpd = lastRate = -1; pctN = -1;
+      for (let k = 0; k < SPK.length; k += 5) SPK[k + 4] = 0;
+      sessTxt = 'SESSION ' + session + ' / 3';
+      rider = a.world.actor(p.rider || 'luka') || null;
+      dyn = (a.AUDIO && a.AUDIO.loop && a.AUDIO.loop('dynamo', { vol: 0, rate: 0.5 })) || null;
+      labels();
+      ov.show(true);
+    },
+    update(dt) {
+      if (done) return;
+      t += dt;
+      if (fb > 0) fb -= dt;
+      if (beatFlash > 0) beatFlash -= dt;
+      if (sparkT > 0) sparkT -= dt;
+      for (let k = 0; k < SPK.length; k += 5) if (SPK[k + 4] > 0) {
+        SPK[k] += SPK[k + 2] * dt; SPK[k + 1] += SPK[k + 3] * dt; SPK[k + 3] += 500 * dt; SPK[k + 4] -= dt;
+      }
+      if (endT >= 0) { m *= 1 - dt; endT -= dt; if (endT < 0) finish({ ok: true }); return; }
+
+      // the beat, from game time
+      if (t >= T0 + beeped * BEAT) { api.sfx('beep'); beeped++; beatFlash = 0.12; }
+      while (t > T0 + judged * BEAT + WIN) { if (hitK !== judged && judged > 1) m -= 8; judged++; }
+
+      const I = api.input;
+      const which = I.pressed('left') || I.pressed('yes') ? 0 : I.pressed('right') || I.pressed('no') ? 1 : -1;
+      if (which >= 0) {
+        if (which === last) { fb = 0.4; fbTxt = 'Alternate!'; }
+        else {
+          last = which;
+          const k = Math.round((t - T0) / BEAT), off = t - (T0 + k * BEAT);
+          if (k >= 0 && k !== hitK && Math.abs(off) < WIN) { hitK = k; m += (target - m) * 0.35; fb = 0.35; fbTxt = 'In time'; }
+          else { m += 6; fb = 0.35; fbTxt = off < 0 ? 'Early' : 'Late'; }
+        }
+      }
+      m -= 6 * dt;
+      m = m < 0 ? 0 : m > 100 ? 100 : m;
+      spin += m * dt * 0.18;
+
+      if (m > 90) {
+        over += dt;
+        if (over > 1) {
+          over = 0; prog = Math.max(0, prog - 10); sparkT = 0.6; api.sfx('spark');
+          for (let k = 0; k < SPK.length; k += 5) {
+            const ang = Math.random() * 6.283, v = 80 + Math.random() * 220;
+            SPK[k] = 0; SPK[k + 1] = 0; SPK[k + 2] = Math.cos(ang) * v; SPK[k + 3] = Math.sin(ang) * v - 120; SPK[k + 4] = 0.4 + Math.random() * 0.4;
+          }
+        }
+      } else over = 0;
+      if (m >= lo && m <= hi) prog += FILL * dt;
+      if (prog >= 100) { prog = 100; api.sfx('chime_ready'); win(api); endT = 1.2; }
+      else if (t > FAIL) finish({ failed: true });
+
+      // dynamo whine + the rider's legs follow the meter (only touch them when it changes)
+      const r = 0.4 + m / 80;
+      if (dyn && Math.abs(r - lastRate) > 0.03) { lastRate = r; dyn.rate(r); dyn.vol(Math.min(1, m / 60) * 0.7); }
+      const spd = m / 67;
+      if (rider && Math.abs(spd - lastSpd) > 0.1) { lastSpd = spd; rider.play('pedal', { speed: spd }); }
+    },
+    draw() {
+      if (done || !ctx) return;
+      const w = innerWidth, h = innerHeight;
+      if (w !== W || h !== H || sch !== api.input.scheme) { W = w; H = h; labels(); }
+      const s = ov.canvas.width / W;
+      ctx.setTransform(s, 0, 0, s, 0, 0); ctx.clearRect(0, 0, W, H);
+      ctx.textBaseline = 'middle';
+
+      const pw = Math.min(560, W - 24), ph = 176, px = (W - pw) / 2 + (sparkT > 0 ? Math.sin(sparkT * 90) * 5 : 0);
+      const py = H - ph - (api.input.scheme === 'touch' ? 200 : 22);
+      ctx.fillStyle = 'rgba(20,29,58,0.9)'; ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 14); ctx.fill();
+      ctx.fillStyle = CONFIG.colors.yes; ctx.fillRect(px + 10, py, pw - 20, 2);
+      ctx.font = F15B; ctx.textAlign = 'left'; ctx.fillStyle = CONFIG.colors.yes; ctx.fillText('PEDAL POWER', px + 16, py + 20);
+      ctx.textAlign = 'right'; ctx.fillStyle = '#c9d2ea'; ctx.font = F13; ctx.fillText(sessTxt, px + pw - 16, py + 20);
+
+      // bike wheel, spinning with the meter
+      const wx = px + 52, wy = py + 90, wr = 34;
+      ctx.lineWidth = 7; ctx.strokeStyle = '#0b0d14'; ctx.beginPath(); ctx.arc(wx, wy, wr, 0, 6.283); ctx.stroke();
+      ctx.lineWidth = 2; ctx.strokeStyle = '#aab3c5'; ctx.beginPath(); ctx.arc(wx, wy, wr - 5, 0, 6.283);
+      for (let k = 0; k < 8; k++) { const a = spin + k * 0.785; ctx.moveTo(wx, wy); ctx.lineTo(wx + Math.cos(a) * (wr - 5), wy + Math.sin(a) * (wr - 5)); }
+      ctx.stroke();
+      ctx.fillStyle = '#dfe4f2'; ctx.beginPath(); ctx.arc(wx, wy, 4, 0, 6.283); ctx.fill();
+      ctx.fillStyle = '#e5484d'; ctx.beginPath(); ctx.roundRect(wx + wr - 4, wy - 22, 12, 20, 3); ctx.fill(); // the dynamo
+      ctx.lineWidth = 2.5; ctx.strokeStyle = '#ffe14a'; ctx.beginPath();
+      for (let k = 0; k < SPK.length; k += 5) if (SPK[k + 4] > 0) {
+        const x = wx + wr + 2 + SPK[k], y = wy - 12 + SPK[k + 1];
+        ctx.moveTo(x, y); ctx.lineTo(x - SPK[k + 2] * 0.03, y - SPK[k + 3] * 0.03);
+      }
+      ctx.stroke();
+
+      // speed meter: green band, red zone above 90, the needle
+      const mx = px + 106, mw = pw - 122, my = py + 46, mh = 22;
+      ctx.fillStyle = '#0b1026'; ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, 6); ctx.fill();
+      ctx.fillStyle = '#2f8f55'; ctx.fillRect(mx + lo / 100 * mw, my + 2, (hi - lo) / 100 * mw, mh - 4);
+      ctx.fillStyle = '#9b2c2c'; ctx.fillRect(mx + 0.9 * mw, my + 2, 0.1 * mw - 2, mh - 4);
+      const inG = m >= lo && m <= hi;
+      ctx.fillStyle = m > 90 ? '#ff6b5e' : inG ? '#7dffb0' : '#ffffff';
+      ctx.fillRect(mx + 2, my + mh / 2 - 3, Math.max(0, m / 100 * mw - 2), 6);
+      ctx.fillRect(mx + m / 100 * mw - 2, my - 5, 4, mh + 10);
+      ctx.font = F12; ctx.textAlign = 'left'; ctx.fillStyle = '#97a2c2'; ctx.fillText('SPEED', mx, my - 10);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = m > 90 ? '#ff8a80' : inG ? '#7dffb0' : m < lo - 20 && t > 3 ? '#ffb3a8' : '#97a2c2';
+      ctx.fillText(m > 90 ? 'TOO FAST' : inG ? 'GOOD' : m < lo - 20 && t > 3 ? 'STALLING' : m < lo ? 'FASTER' : 'EASE OFF', mx + mw, my - 10);
+
+      // beat keys: the one to press next is lit; both pulse on the beep
+      const ky = py + 92, kw = 58, kh = 32, kx = mx + mw / 2;
+      for (let k = 0; k < 2; k++) {
+        const x = k ? kx + 8 : kx - 8 - kw, next = last !== k;
+        ctx.fillStyle = next ? (beatFlash > 0 ? '#fff' : CONFIG.colors.yes) : '#2a3355';
+        ctx.beginPath(); ctx.roundRect(x, ky - kh / 2, kw, kh, 8); ctx.fill();
+        ctx.fillStyle = next ? CONFIG.colors.navy : '#8f9abb'; ctx.font = F16B; ctx.textAlign = 'center';
+        ctx.fillText(k ? labB : labA, x + kw / 2, ky + 1);
+      }
+      ctx.fillStyle = beatFlash > 0 ? '#fff' : '#3a4670'; ctx.beginPath(); ctx.arc(kx, ky, 5, 0, 6.283); ctx.fill();
+      ctx.textAlign = 'center';
+      if (t < T0 + BEAT * 3) { ctx.font = F12; ctx.fillStyle = '#8f9abb'; ctx.fillText(hintTxt, px + pw / 2, ky + 30); }
+      else if (fb > 0) {
+        ctx.globalAlpha = Math.min(1, fb * 4); ctx.font = F14B;
+        ctx.fillStyle = fbTxt === 'In time' ? '#7dffb0' : '#ffcf7a'; ctx.fillText(fbTxt, kx, ky + 30); ctx.globalAlpha = 1;
+      }
+
+      // session progress (the phone charges +1% per full session)
+      const gy = py + 152, gw = mw;
+      ctx.font = F12; ctx.textAlign = 'left'; ctx.fillStyle = '#97a2c2'; ctx.fillText('CHARGE', px + 16, gy);
+      ctx.fillStyle = '#0b1026'; ctx.beginPath(); ctx.roundRect(mx, gy - 8, gw, 16, 5); ctx.fill();
+      ctx.fillStyle = sparkT > 0 ? '#ff6b5e' : CONFIG.colors.yes; ctx.beginPath(); ctx.roundRect(mx + 2, gy - 6, Math.max(0, prog / 100 * (gw - 4)), 12, 4); ctx.fill();
+      const pn = Math.floor(prog);
+      if (pn !== pctN) { pctN = pn; pctTxt = pn >= 100 ? '+1%' : pn + '%'; }
+      ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.fillText(pctTxt, mx - 8, gy);
+    },
+    end() {
+      done = true; endT = -1;
+      if (dyn) { dyn.stop(0.5); dyn = null; }
+      if (ctx) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, ov.canvas.width, ov.canvas.height); }
+      if (ov) ov.show(false);
+    },
+    autoplay(a) { done = true; win(a); a.finish({ ok: true }); },
+  };
+})();
+// ============================================================ MINIGAMES: Pitch Cards (3.1), Customer Journey (2.10), the Sequencer (3.3)
+// Overlay mini-games (SPEC §14). One shared private scope; only one mini-game runs at a time.
+
+Object.assign(MINIGAMES, (() => {
+  const F = '"Trebuchet MS", "Segoe UI", system-ui, sans-serif';
+  const HAND = '"Segoe Print", "Bradley Hand", "Comic Sans MS", "Chalkboard SE", cursive';
+  const MONO = '"Courier New", ui-monospace, Menlo, Consolas, monospace';
+  const DASH = [5, 5], NODASH = [], NUMS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'], F10M = '10px ' + MONO;
+  let api, ov, ctx, W = 0, H = 0, touchEl = null, lpx = -1, lpy = -1, onSize = null, sch = '';
+
+  function open(a, layout) {
+    api = a; ov = a.overlay; ctx = ov.ctx; W = H = 0; sch = ''; onSize = layout;
+    touchEl = document.getElementById('touch'); lpx = a.input.pointer.x; lpy = a.input.pointer.y;
+    ov.show(true);
+  }
+  function close() {
+    if (ctx) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, ov.canvas.width, ov.canvas.height); }
+    if (ov) ov.show(false);
+  }
+  function size() { if (W !== innerWidth || H !== innerHeight || sch !== api.input.scheme) { W = innerWidth; H = innerHeight; sch = api.input.scheme; onSize(); } }
+  function clear() { const s = ov.canvas.width / W; ctx.setTransform(s, 0, 0, s, 0, 0); ctx.clearRect(0, 0, W, H); }
+  // the on-screen stick and YES/NO buttons also move input.pointer; ignore those
+  const ptrOk = () => { const o = api.input.pointer.over; return !(touchEl && o && touchEl.contains(o)); };
+  const inRect = (x, y, rx, ry, rw, rh) => x >= rx && x <= rx + rw && y >= ry && y <= ry + rh;
+
+  // ---------------------------------------------------------- the card table (pitch_cards, journey)
+  // Two columns: the ordered list on the left (Lst), the pool on the right (Rst). Drag between them,
+  // tap to add/remove; keys: arrows move, YES adds / picks up / drops, NO takes a card back.
+  const NOTES = {
+    Des: 'Front Gate, 31 years', Bernie: 'Toast for half the college', Declan: 'Machines for shop workers',
+    Ronan: 'Sleeps. Still turns up.', 'Siobhán': 'Learned the whole module', Fiachra: 'Four notes now',
+    Mick: 'Won a battle (pigeons)', Nuala: 'Minds the old library', Hartigan: 'Never once late',
+  };
+  const STEPS = ['GREET', 'ASK', 'LISTEN', 'RECOMMEND'];
+  const STEP_NOTES = { GREET: 'say hello first', ASK: 'what do they need?', LISTEN: 'actually listen', RECOMMEND: 'the right thing for them' };
+  const Lst = [], Rst = [];
+  let mode = '', done = true, drag = null, held = null, dox = 0, doy = 0, dsx = 0, dsy = 0, moved = false;
+  let tside = 0, tidx = 0, fside = 0, fidx = 0, kb = false, checkT = -1, endT = -1, okT = 0, slowT = 0;
+  let colX0 = 0, colX1 = 0, colW = 0, cw = 0, top = 0, cardH = 0, gap = 8, rowsN = 4, bx = 0, by = 0, bw = 0, bh = 0;
+  let fTitle = '', fHint = '', fHead = '', fName = '', fSub = '', fNum = '', fBtn = '';
+  let title = '', titleS = '', headL = '', headR = '', hintP = '', hintK = '', hx = 0;
+
+  const rowY = (i) => top + 40 + i * (cardH + gap);
+  const xL = () => colX0 + 30, xR = () => colX1 + (colW - cw) / 2;
+
+  function tableLayout() {
+    const touch = sch === 'touch', foot = (mode === 'pitch' ? 74 : 16) + (touch ? 190 : 8);
+    top = touch ? 118 : W < 560 ? 92 : 84; gap = 8; hx = W < 600 ? 16 : W / 2;
+    colW = Math.min(330, (W - 36) / 2); colX0 = W / 2 - colW - 6; colX1 = W / 2 + 6; cw = colW - 40;
+    cardH = Math.floor(Math.max(34, Math.min(68, (H - top - 48 - foot - (rowsN - 1) * gap) / rowsN)));
+    bw = Math.min(320, W - 40); bh = 46; bx = (W - bw) / 2; by = rowY(rowsN) + 14;
+    const k = Math.min(1, W / 700);
+    fTitle = 'bold ' + (hx === 16 ? 18 : Math.round(17 + 7 * k)) + 'px ' + F; fHint = Math.round(12 + 2 * k) + 'px ' + F;
+    fHead = 'bold ' + Math.round(11 + 3 * k) + 'px ' + F; fBtn = 'bold ' + Math.round(14 + 3 * k) + 'px ' + F;
+    fName = mode === 'pitch' ? 'bold ' + Math.round(Math.min(cardH * 0.4, cw * 0.14)) + 'px ' + HAND
+      : 'bold ' + Math.round(Math.min(cardH * 0.36, cw * 0.12)) + 'px ' + F;
+    fSub = Math.round(Math.max(10, Math.min(cardH * 0.2, cw * 0.075))) + 'px ' + HAND;
+    fNum = 'bold ' + Math.round(Math.min(22, cardH * 0.4)) + 'px ' + HAND;
+    for (let i = 0; i < Lst.length; i++) { Lst[i].x = xL(); Lst[i].y = rowY(i); }
+    for (let i = 0; i < Rst.length; i++) { Rst[i].x = xR(); Rst[i].y = rowY(i); }
+  }
+
+  function tableStart(a, m) {
+    mode = m; done = false; drag = held = null; kb = false; checkT = endT = -1; okT = slowT = 0; fside = fidx = 0;
+    Lst.length = Rst.length = 0;
+    if (m === 'pitch') {
+      const fixed = ['Des', 'Bernie', 'Declan'];
+      for (const n of NAMES) {
+        const f = fixed.includes(n);
+        if (!f && !state.names.includes(n)) continue;
+        (f ? Lst : Rst).push({ id: n, label: n, sub: NOTES[n] || '', fixed: f, x: 0, y: 0, tx: 0, ty: 0, wob: 0 });
+      }
+      rowsN = Lst.length + Rst.length;
+      title = "One minute. Who's in Rue's pitch?"; titleS = "Who's in Rue's pitch?"; headL = "RUE'S SPEECH"; headR = "LUKA'S NOTEBOOK";
+      hintP = 'Tap a name to add it. Drag cards to set the order.';
+      hintK = 'Arrows move · YES adds a name / picks a card up · NO takes it out';
+    } else {
+      const order = [2, 0, 3, 1]; // shuffled, never already right
+      for (let i = 0; i < 4; i++) { const s = STEPS[order[i]]; Rst.push({ id: s, label: s, sub: STEP_NOTES[s], fixed: false, x: 0, y: 0, tx: 0, ty: 0, wob: 0 }); }
+      rowsN = 4;
+      title = titleS = 'The customer journey'; headL = 'IN ORDER'; headR = 'SIOBHÁN’S NOTES';
+      hintP = 'Drag the four cards into order.';
+      hintK = 'Arrows move · YES places a card / picks it up · NO takes it back';
+    }
+    fside = Lst.length ? 0 : 1;
+    open(a, tableLayout);
+  }
+
+  function changed() {
+    if (mode === 'journey' && Lst.length === 4) checkT = 0.5;
+    if (fside < 2 && !(fside ? Rst : Lst).length) fside = (fside ? Lst : Rst).length ? 1 - fside : mode === 'pitch' ? 2 : 1;
+    if (fside < 2) fidx = Math.max(0, Math.min(fidx, (fside ? Rst : Lst).length - 1));
+  }
+  function moveCard(c, to) {
+    const from = to === Lst ? Rst : Lst;
+    from.splice(from.indexOf(c), 1); to.push(c); api.sfx('pop'); changed();
+  }
+  function refuse(c) { c.wob = 0.4; api.sfx('clunk'); }
+  function tap(c) { if (Rst.indexOf(c) >= 0) moveCard(c, Lst); else if (c.fixed) refuse(c); else moveCard(c, Rst); }
+  function hitCard(x, y) {
+    for (let i = 0; i < Lst.length; i++) if (inRect(x, y, Lst[i].x, Lst[i].y, cw, cardH)) return Lst[i];
+    for (let i = 0; i < Rst.length; i++) if (inRect(x, y, Rst[i].x, Rst[i].y, cw, cardH)) return Rst[i];
+    return null;
+  }
+  function confirm() {
+    const order = Lst.map((c) => c.id);
+    state.flags.pitchOrder = order;
+    done = true; api.sfx('pop'); api.finish({ order });
+  }
+
+  function tablePointer() {
+    const I = api.input, P = I.pointer;
+    if (!ptrOk()) return false;
+    if (P.x !== lpx || P.y !== lpy) { kb = false; lpx = P.x; lpy = P.y; }
+    if (drag) {
+      if (Math.abs(P.x - dsx) + Math.abs(P.y - dsy) > 6) moved = true;
+      drag.x = P.x - dox; drag.y = P.y - doy;
+      tside = drag.fixed || P.x < W / 2 ? 0 : 1;
+      const list = tside ? Rst : Lst, n = list.length - (list.indexOf(drag) >= 0 ? 1 : 0);
+      tidx = Math.max(0, Math.min(n, Math.round((drag.y - rowY(0)) / (cardH + gap))));
+      if (!P.down) {
+        const c = drag; drag = null;
+        if (!moved) { tap(c); return true; }
+        const from = Lst.indexOf(c) >= 0 ? Lst : Rst;
+        from.splice(from.indexOf(c), 1); list.splice(Math.min(tidx, list.length), 0, c);
+        api.sfx('pop'); changed();
+      }
+      return true;
+    }
+    if (!P.pressed) return false;
+    if (I.pressed('no')) return true; // right click: nothing
+    const c = hitCard(P.x, P.y);
+    if (c) {
+      drag = c; held = null; moved = false; dox = P.x - c.x; doy = P.y - c.y; dsx = P.x; dsy = P.y;
+      tside = Lst.indexOf(c) >= 0 ? 0 : 1; tidx = (tside ? Rst : Lst).indexOf(c);
+    } else if (mode === 'pitch' && inRect(P.x, P.y, bx, by, bw, bh)) confirm();
+    return true; // a click on the table never falls through as YES
+  }
+
+  function tableKeys() {
+    const I = api.input;
+    const dy = I.pressed('up') ? -1 : I.pressed('down') ? 1 : 0, dx = I.pressed('left') ? -1 : I.pressed('right') ? 1 : 0;
+    const yes = I.pressed('yes'), no = I.pressed('no');
+    if (!(dx || dy || yes || no)) return;
+    kb = true;
+    if (held) {
+      const i = Lst.indexOf(held), j = i + dy;
+      if (dy && j >= 0 && j < Lst.length) { Lst[i] = Lst[j]; Lst[j] = held; fidx = j; api.sfx('tick'); }
+      if (yes || no) { held = null; api.sfx('pop'); changed(); }
+      return;
+    }
+    if (dx && fside < 2) { const s = fside + dx; if (s >= 0 && s <= 1 && (s ? Rst : Lst).length) { fside = s; fidx = Math.min(fidx, (s ? Rst : Lst).length - 1); } }
+    if (dy) {
+      if (fside === 2) { if (dy < 0 && Lst.length) { fside = 0; fidx = Lst.length - 1; } }
+      else {
+        const n = (fside ? Rst : Lst).length;
+        fidx += dy;
+        if (fidx >= n) { fidx = n - 1; if (mode === 'pitch') fside = 2; }
+        if (fidx < 0) fidx = 0;
+      }
+    }
+    if (yes) {
+      if (fside === 2) confirm();
+      else if (fside === 1) { if (Rst[fidx]) moveCard(Rst[fidx], Lst); }
+      else if (Lst[fidx]) { held = Lst[fidx]; api.sfx('tick'); }
+    } else if (no && fside === 0 && Lst[fidx]) {
+      if (Lst[fidx].fixed) refuse(Lst[fidx]); else moveCard(Lst[fidx], Rst);
+    }
+  }
+
+  function place(list, side, k) {
+    let v = 0;
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i];
+      if (c === drag) continue;
+      if (drag && tside === side && v === tidx) v++;
+      c.tx = side ? xR() : xL(); c.ty = rowY(v++);
+      c.x += (c.tx - c.x) * k; c.y += (c.ty - c.y) * k;
+      if (c.wob > 0) c.wob -= 1 / 60;
+    }
+  }
+
+  function tableUpdate(dt) {
+    if (done) return;
+    size();
+    if (okT > 0) okT -= dt;
+    if (slowT > 0) slowT -= dt;
+    if (endT >= 0) { endT -= dt; if (endT < 0) { done = true; api.finish({ ok: true }); } }
+    else if (checkT >= 0) {
+      checkT -= dt;
+      if (checkT < 0) {
+        let ok = true;
+        for (let i = 0; i < 4; i++) if (Lst[i].id !== STEPS[i]) ok = false;
+        if (ok) { okT = 1; endT = 1.1; api.sfx('chime_ready'); }
+        else { // they shuffle back, gently
+          api.sfx('clunk'); slowT = 1;
+          for (let i = 0; i < 4; i++) Rst.push(Lst[(i * 3 + 1) % 4]);
+          Lst.length = 0; fside = 1; fidx = 0;
+        }
+      }
+    } else if (!tablePointer()) tableKeys();
+    const k = Math.min(1, dt * (slowT > 0 ? 5 : 16));
+    place(Lst, 0, k); place(Rst, 1, k);
+  }
+
+  function drawCard(c, x, y, lift, focus, hover) {
+    const h = cardH, w = cw;
+    if (c.wob > 0) x += Math.sin(c.wob * 60) * 4;
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.roundRect(x + (lift ? 5 : 2), y + (lift ? 8 : 3), w, h, 4); ctx.fill();
+    ctx.fillStyle = okT > 0 && Lst.indexOf(c) >= 0 ? '#e9fbe6' : hover ? '#fffdf4' : '#fbf5e1';
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, 4); ctx.fill();
+    ctx.fillStyle = '#e6a3a3'; ctx.fillRect(x + 5, y + h * 0.24, w - 10, 1.5);
+    ctx.fillStyle = '#cad7ec'; for (let ly = y + h * 0.24 + h * 0.19; ly < y + h - 3; ly += h * 0.19) ctx.fillRect(x + 5, ly, w - 10, 1);
+    const sub = c.sub && h >= 44;
+    ctx.fillStyle = '#1f2a5a'; ctx.font = fName; ctx.textAlign = mode === 'pitch' ? 'left' : 'center';
+    ctx.fillText(c.label, mode === 'pitch' ? x + 12 : x + w / 2, y + h * (sub ? 0.47 : 0.56));
+    if (sub) { ctx.fillStyle = '#6a6f80'; ctx.font = fSub; ctx.fillText(c.sub, mode === 'pitch' ? x + 12 : x + w / 2, y + h * 0.8); }
+    if (c.fixed) {
+      ctx.fillStyle = '#c0392b'; ctx.beginPath(); ctx.arc(x + w - 13, y + 11, 6, 0, 6.283); ctx.fill();
+      ctx.fillStyle = '#f5b7b1'; ctx.beginPath(); ctx.arc(x + w - 15, y + 9, 2, 0, 6.283); ctx.fill();
+    }
+    if (focus) { ctx.lineWidth = 3; ctx.strokeStyle = CONFIG.colors.yes; ctx.beginPath(); ctx.roundRect(x - 4, y - 4, w + 8, h + 8, 7); ctx.stroke(); }
+  }
+
+  function tableDraw() {
+    if (done || !W) return;
+    clear();
+    ctx.textBaseline = 'middle';
+    // table top
+    ctx.fillStyle = mode === 'pitch' ? '#4a3324' : '#3a4450'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = mode === 'pitch' ? '#3f2b1e' : '#333c47';
+    for (let y = 70; y < H; y += 70) ctx.fillRect(0, y, W, 2);
+    // header
+    ctx.textAlign = hx === 16 ? 'left' : 'center'; ctx.fillStyle = '#fff'; ctx.font = fTitle; ctx.fillText(hx === 16 ? titleS : title, hx, 28);
+    ctx.fillStyle = '#e2d6c4'; ctx.font = fHint; ctx.fillText(kb ? hintK : hintP, hx, 56);
+    // left column: numbered slots
+    const colH = rowsN * (cardH + gap) + 36;
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath(); ctx.roundRect(colX0, top, colW, colH, 10); ctx.fill();
+    ctx.fillStyle = CONFIG.colors.yes; ctx.font = fHead; ctx.textAlign = 'left'; ctx.fillText(headL, colX0 + 12, top + 18);
+    const slots = mode === 'journey' ? 4 : Lst.length + (drag && tside === 0 && Lst.indexOf(drag) < 0 ? 1 : 0);
+    ctx.setLineDash(DASH); ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    for (let i = 0; i < slots; i++) {
+      ctx.beginPath(); ctx.roundRect(xL(), rowY(i), cw, cardH, 4); ctx.stroke();
+    }
+    ctx.setLineDash(NODASH);
+    if (mode === 'pitch') { ctx.fillStyle = 'rgba(244,236,216,0.55)'; ctx.font = fSub; ctx.textAlign = 'left'; ctx.fillText('Pinned names stay in.', colX0 + 14, top + colH - 14); }
+    ctx.fillStyle = '#f4ecd8'; ctx.font = fNum; ctx.textAlign = 'center';
+    for (let i = 0; i < slots; i++) ctx.fillText(NUMS[i], colX0 + 16, rowY(i) + cardH / 2);
+    // right column: paper
+    ctx.fillStyle = mode === 'pitch' ? '#f1f2ec' : '#fbfaf2'; ctx.beginPath(); ctx.roundRect(colX1, top, colW, colH, 4); ctx.fill();
+    if (mode === 'pitch') { // continuous-form printout: green bars, tractor holes
+      ctx.fillStyle = '#dfeedd'; for (let y = top + 30; y < top + colH - 10; y += 44) ctx.fillRect(colX1 + 14, y, colW - 28, 22);
+      ctx.fillStyle = '#4a3324'; for (let y = top + 10; y < top + colH - 4; y += 16) { ctx.beginPath(); ctx.arc(colX1 + 7, y, 3, 0, 6.283); ctx.arc(colX1 + colW - 7, y, 3, 0, 6.283); ctx.fill(); }
+      if (colW >= 290) { ctx.fillStyle = '#b8bcc4'; ctx.font = F10M; ctx.textAlign = 'right'; ctx.fillText('JARVIS ERR 4044', colX1 + colW - 16, top + 18); }
+    } else {
+      ctx.fillStyle = '#d3def0'; for (let y = top + 30; y < top + colH; y += 18) ctx.fillRect(colX1, y, colW, 1);
+      ctx.fillStyle = '#eab0b0'; ctx.fillRect(colX1 + 18, top, 1.5, colH);
+    }
+    ctx.fillStyle = '#2b3350'; ctx.font = fHead; ctx.textAlign = 'left'; ctx.fillText(headR, colX1 + 24, top + 18);
+    if (mode === 'pitch' && !Rst.length) { ctx.fillStyle = '#8a8f9c'; ctx.font = fSub; ctx.fillText('(everyone’s in)', colX1 + 24, rowY(0) + cardH / 2); }
+
+    // cards
+    const P = api.input.pointer, hov = !kb && !drag && ptrOk() ? hitCard(P.x, P.y) : null;
+    for (let i = 0; i < Lst.length; i++) { const c = Lst[i]; if (c !== drag && c !== held) drawCard(c, c.x, c.y, false, kb && fside === 0 && fidx === i, c === hov); }
+    for (let i = 0; i < Rst.length; i++) { const c = Rst[i]; if (c !== drag) drawCard(c, c.x, c.y, false, kb && fside === 1 && fidx === i, c === hov); }
+    if (held) drawCard(held, held.x - 6, held.y - 4, true, true, false);
+    if (drag) {
+      ctx.save(); ctx.translate(drag.x + cw / 2, drag.y + cardH / 2); ctx.rotate(-0.04);
+      drawCard(drag, -cw / 2, -cardH / 2, true, false, false); ctx.restore();
+    }
+    // confirm
+    if (mode === 'pitch') {
+      const f = kb && fside === 2, hb = !kb && inRect(P.x, P.y, bx, by, bw, bh);
+      ctx.fillStyle = f || hb ? '#ffe36b' : CONFIG.colors.yes; ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 23); ctx.fill();
+      if (f) { ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.stroke(); }
+      ctx.fillStyle = CONFIG.colors.navy; ctx.font = fBtn; ctx.textAlign = 'center'; ctx.fillText('YES — That’s the speech', W / 2, by + bh / 2 + 1);
+    }
+  }
+
+  const tableEnd = () => { done = true; drag = held = null; close(); };
+
+  // ---------------------------------------------------------- the Sequencer
+  // 92 BPM, 4 lanes x 16 steps, green on black. AUDIO.seq plays it (fallback: sfx per step).
+  const DEF = [[0, 4, 8, 12], [4, 12], [0, 2, 4, 6, 8, 10, 12, 14], [0, 2, 5, 7, 10, 13]];
+  const LANE = [ // sample key, name, role, cell tag, sfx, bleep rate
+    ['dynamo', 'DYNAMO', 'KICK', 'DYN', 'dynamo_hit', 0.5], ['till', 'TILL', 'SNARE', 'TIL', 'till', 0.8],
+    ['kettle', 'KETTLE', 'HAT', 'KET', 'kettle_click', 1.6], ['whistle', 'WHISTLE', 'LEAD', '', 'whistle', 1],
+  ];
+  const MEL = ['D-5', 'F#5', 'A-5', 'F#5', 'E-5', 'G-5', 'B-5', 'A-5', 'F#5', 'A-5', 'D-6', 'B-5', 'A-5', 'F#5', 'E-5', 'D-5'];
+  const MELL = ['d-5', 'f#5', 'a-5', 'f#5', 'e-5', 'g-5', 'b-5', 'a-5', 'f#5', 'a-5', 'd-6', 'b-5', 'a-5', 'f#5', 'e-5', 'd-5'];
+  const MELR = [0, 4, 7, 4, 2, 5, 9, 7, 4, 7, 12, 9, 7, 4, 2, 0].map((n) => Math.pow(2, n / 12));
+  const ROWS = []; for (let i = 1; i <= 16; i++) ROWS.push(i < 10 ? '0' + i : '' + i);
+  const PAT = [[], [], [], []], HAS = [false, false, false, false], NAME = ['', '', '', ''], TAG = ['', '', '', ''];
+  const STEP = 60 / 92 / 4;
+  let sDone = true, sr = 0, sc = 0, bsel = 0, playing = false, own = false, acc = 0, playRow = -1, extras = '', extrasN = '', narrow = false, hy = 0;
+  let gx = 0, gy = 0, rowH = 0, colW2 = 0, numW = 0, sbw = 0, sbh = 38, sby = 0, fRow = '', fHdr = '', fBig = '', fSm = '', helpTxt = '';
+  const onStep = (i) => { playRow = i % 16; };
+
+  function seqLayout() {
+    const touch = sch === 'touch', foot = 84 + (touch ? 190 : 6);
+    narrow = W < 600; hy = touch ? 40 : 0; gy = 108 + hy;
+    rowH = Math.floor(Math.max(16, Math.min(30, (H - gy - foot) / 16)));
+    numW = Math.round(Math.max(34, Math.min(56, W * 0.08)));
+    colW2 = Math.floor(Math.max(62, Math.min(150, (W - 20 - numW) / 4)));
+    gx = Math.round((W - numW - 4 * colW2) / 2 + numW);
+    sbw = Math.min(170, (W - 40) / 2); sby = gy + 16 * rowH + 14;
+    const f = Math.round(Math.min(rowH * 0.62, colW2 * 0.2));
+    fRow = 'bold ' + f + 'px ' + MONO; fHdr = 'bold ' + Math.round(Math.min(15, colW2 * 0.17)) + 'px ' + MONO;
+    fBig = 'bold ' + Math.round(Math.min(22, W * 0.05)) + 'px ' + MONO; fSm = Math.round(Math.min(13, W * 0.031)) + 'px ' + MONO;
+    helpTxt = touch ? 'TAP A STEP TO TOGGLE IT' : 'ARROWS/MOUSE MOVE · YES TOGGLE · NO PLAY/STOP';
+  }
+
+  function play(on) {
+    const q = api.AUDIO && api.AUDIO.seq;
+    if (on === playing) return;
+    playing = on; playRow = -1;
+    if (q) { own = false; if (on) q.play(PAT, state.samples, onStep); else q.stop(); }
+    else { own = on; acc = STEP; }
+  }
+  const SO = { rate: 1, vol: 1 }; // reused: the fallback clock fires these every step
+  function hitSfx(l, r) {
+    SO.rate = l === 3 ? MELR[r] : HAS[l] ? 1 : LANE[l][5]; SO.vol = HAS[l] ? 0.8 : 0.6;
+    api.sfx(HAS[l] ? LANE[l][4] : 'beep', SO);
+  }
+  function toggle(r, c) { PAT[c][r] = !PAT[c][r]; if (PAT[c][r] && !playing) hitSfx(c, r); else api.sfx('tick', { vol: 0.5 }); }
+  function seqFinish() {
+    play(false);
+    state.pattern = PAT.map((l) => l.slice());
+    sDone = true; api.finish({ pattern: state.pattern });
+  }
+  function loadPattern() {
+    const sp = state.pattern, ok = Array.isArray(sp) && sp.length === 4 && sp.every((l) => Array.isArray(l) && l.length === 16);
+    for (let l = 0; l < 4; l++) { PAT[l].length = 16; for (let i = 0; i < 16; i++) PAT[l][i] = ok ? !!sp[l][i] : DEF[l].includes(i); }
+  }
+
+  const sequencer = {
+    start(params, a) {
+      sDone = false; sr = sc = bsel = 0; playing = own = false; playRow = -1;
+      loadPattern();
+      const sm = state.samples || [];
+      for (let l = 0; l < 4; l++) { HAS[l] = sm.includes(LANE[l][0]); NAME[l] = HAS[l] ? LANE[l][1] : 'BLEEP'; TAG[l] = HAS[l] ? LANE[l][3] : 'BLP'; }
+      extras = 'RAIN BED ' + (sm.includes('rain') ? 'ON' : '--') + '   TRILL INTRO ' + (sm.includes('trill') ? 'ON' : '--') + '   BELL ' + (sm.includes('bell') ? 'ON' : '--');
+      extrasN = '92 BPM   ' + extras;
+      open(a, seqLayout);
+    },
+    update(dt) {
+      if (sDone) return;
+      size();
+      if (own) { // no AUDIO.seq: tick our own clock and fire one-shots
+        acc += dt;
+        while (acc >= STEP) { acc -= STEP; playRow = (playRow + 1) % 16; for (let l = 0; l < 4; l++) if (PAT[l][playRow]) hitSfx(l, playRow); }
+      }
+      const I = api.input, P = I.pointer, ok = ptrOk();
+      const col = Math.floor((P.x - gx) / colW2), row = Math.floor((P.y - gy) / rowH);
+      const onCell = ok && col >= 0 && col < 4 && row >= 0 && row < 16;
+      const onPlay = ok && inRect(P.x, P.y, W / 2 - sbw - 8, sby, sbw, sbh), onFin = ok && inRect(P.x, P.y, W / 2 + 8, sby, sbw, sbh);
+      if (ok && (P.x !== lpx || P.y !== lpy)) {
+        lpx = P.x; lpy = P.y;
+        if (onCell) { sr = row; sc = col; } else if (onPlay || onFin) { sr = 16; bsel = onPlay ? 0 : 1; }
+      }
+      if (ok && P.pressed && !I.pressed('no')) {
+        if (onCell) { sr = row; sc = col; toggle(row, col); }
+        else if (onPlay) play(!playing);
+        else if (onFin) seqFinish();
+        return;
+      }
+      if (I.pressed('no')) { play(!playing); return; }
+      if (I.pressed('up') && sr > 0) sr--;
+      if (I.pressed('down') && sr < 16) { sr++; if (sr === 16) bsel = sc < 2 ? 0 : 1; }
+      if (I.pressed('left')) { if (sr === 16) bsel = 0; else if (sc > 0) sc--; }
+      if (I.pressed('right')) { if (sr === 16) bsel = 1; else if (sc < 3) sc++; }
+      if (I.pressed('yes')) { if (sr < 16) toggle(sr, sc); else if (bsel) seqFinish(); else play(!playing); }
+    },
+    draw() {
+      if (sDone || !W) return;
+      clear();
+      ctx.fillStyle = '#020603'; ctx.fillRect(0, 0, W, H);
+      ctx.textBaseline = 'middle';
+      const G = '#39ff6a', D = '#1d6b34', x0 = gx - numW, x1 = gx + 4 * colW2;
+      ctx.fillStyle = G; ctx.font = fBig; ctx.textAlign = 'left'; ctx.fillText('PUDDING.SEQ', x0, 26);
+      if (!narrow) { ctx.textAlign = 'right'; ctx.fillText('92 BPM', x1, 26); }
+      ctx.font = fSm; ctx.fillStyle = D; ctx.textAlign = 'left'; ctx.fillText(narrow ? extrasN : extras, x0, 52);
+      ctx.fillStyle = G; ctx.fillRect(x0, 64, x1 - x0, 1);
+      for (let l = 0; l < 4; l++) {
+        const cx = gx + l * colW2 + colW2 / 2;
+        ctx.textAlign = 'center'; ctx.font = fHdr; ctx.fillStyle = HAS[l] ? G : '#c8ffb0'; ctx.fillText(NAME[l], cx, 80 + hy);
+        ctx.fillStyle = D; ctx.font = fSm; ctx.fillText(LANE[l][2], cx, 97 + hy);
+      }
+      ctx.font = fRow;
+      for (let r = 0; r < 16; r++) {
+        const y = gy + r * rowH;
+        if (r === playRow) { ctx.fillStyle = '#0d4020'; ctx.fillRect(x0, y, x1 - x0, rowH); }
+        ctx.textAlign = 'left'; ctx.fillStyle = r % 4 === 0 ? G : D; ctx.fillText(ROWS[r], x0 + 2, y + rowH / 2 + 1);
+        for (let l = 0; l < 4; l++) {
+          const x = gx + l * colW2, on = PAT[l][r], cur = sr === r && sc === l;
+          if (cur) { ctx.fillStyle = G; ctx.fillRect(x + 2, y + 1, colW2 - 4, rowH - 2); }
+          ctx.fillStyle = cur ? '#021' : on ? G : D; ctx.textAlign = 'center';
+          ctx.fillText(l === 3 ? (on ? MEL[r] : MELL[r]) : on ? TAG[l] : '···', x + colW2 / 2, y + rowH / 2 + 1);
+        }
+      }
+      ctx.fillStyle = D; ctx.fillRect(x0, gy + 16 * rowH + 4, x1 - x0, 1);
+      for (let b = 0; b < 2; b++) {
+        const x = b ? W / 2 + 8 : W / 2 - sbw - 8, f = sr === 16 && bsel === b;
+        ctx.fillStyle = f ? G : '#020603'; ctx.fillRect(x, sby, sbw, sbh);
+        ctx.lineWidth = 2; ctx.strokeStyle = G; ctx.strokeRect(x + 1, sby + 1, sbw - 2, sbh - 2);
+        ctx.fillStyle = f ? '#021' : G; ctx.font = fHdr; ctx.textAlign = 'center';
+        ctx.fillText(b ? '[ FINISH ]' : playing ? '[ STOP ]' : '[ PLAY ]', x + sbw / 2, sby + sbh / 2 + 1);
+      }
+      ctx.fillStyle = D; ctx.font = fSm; ctx.fillText(helpTxt, W / 2, sby + sbh + 20);
+    },
+    end() { play(false); sDone = true; close(); },
+    autoplay(a) { api = a; playing = false; loadPattern(); state.pattern = PAT.map((l) => l.slice()); sDone = true; a.finish({ pattern: state.pattern }); },
+  };
+
+  return {
+    pitch_cards: {
+      start(params, a) { tableStart(a, 'pitch'); },
+      update: tableUpdate, draw: tableDraw, end: tableEnd,
+      autoplay(a) { // everyone collected, in notebook order
+        const order = NAMES.filter((n) => n === 'Des' || n === 'Bernie' || n === 'Declan' || state.names.includes(n));
+        state.flags.pitchOrder = order; done = true; a.finish({ order });
+      },
+    },
+    journey: {
+      start(params, a) { tableStart(a, 'journey'); },
+      update: tableUpdate, draw: tableDraw, end: tableEnd,
+      autoplay(a) { done = true; a.finish({ ok: true }); },
+    },
+    sequencer,
+  };
+})());
 
 // ============================================================ MAIN
 // boot(): loader (everything built, compiled and uploaded up front) -> "JARVIS is ready." -> prologue on first launch -> title.
