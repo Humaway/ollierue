@@ -162,6 +162,8 @@ MINIGAMES.final_yes = (() => {
   function finish() { if (done) return; done = true; api.finish({ done: true }); }
 
   return {
+    // Any snapped still by name (e.g. 2.10's flashback inserts: 'glance_lodge', 'glance_theatre', 'glance_step'), or null.
+    still: (name) => shots[name] || null,
     snap(name) {
       if (typeof world === 'undefined' || !world.render || (typeof flow !== 'undefined' && flow.skipping)) return;
       try {

@@ -1,12 +1,12 @@
 // Word-for-word check: every scripted dialogue line (and quoted on-screen text) in the spec must appear in the build.
-//   node test/lines.mjs <spec.md> [--from 1.2] [--to 1.7] [--quotes]
+//   node test/lines.mjs <spec.md> [--from 1.2] [--to 1.7] [--quotes] [--file games/rue.html]
 // Reports missing fragments per scene. `^` beats and "(beat)" split a line into fragments.
 import { readFileSync } from 'fs';
 const specPath = process.argv.find((a) => a.endsWith('.md'));
 const arg = (k) => { const i = process.argv.indexOf('--' + k); return i < 0 ? null : process.argv[i + 1]; };
 const quotes = process.argv.includes('--quotes');
 const spec = readFileSync(specPath, 'utf8').split('\n');
-const build = readFileSync(new URL('../games/rue.html', import.meta.url), 'utf8')
+const build = readFileSync(arg('file') || new URL('../games/rue.html', import.meta.url), 'utf8')
   .replace(/\\(['"`\\])/g, '$1').replace(/\\n/g, ' ').replace(/\^/g, ' ').replace(/\s+/g, ' ');
 const norm = (s) => s.replace(/\\([[\]])/g, '$1').replace(/\s+/g, ' ').trim();
 
