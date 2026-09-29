@@ -142,17 +142,19 @@ const input = (() => {
   });
   addEventListener('blur', () => { keysDown.clear(); for (const a of A) kb[a] = ms[a] = tch[a] = false; });
 
+  const onTouchUI = (e) => e.target.closest && e.target.closest('#touch'); // touch controls handle themselves, never move the pointer
   addEventListener('pointerdown', (e) => {
-    const p = I.pointer;
-    p.x = e.clientX; p.y = e.clientY; p.down = true; p.over = e.target; pPtr = true;
     if (e.pointerType === 'touch') I.setScheme('touch'); else I.setScheme('kb');
     gesture();
-    if (e.target.closest && e.target.closest('#touch')) return; // touch controls handle themselves
+    if (onTouchUI(e)) return;
+    const p = I.pointer;
+    p.x = e.clientX; p.y = e.clientY; p.down = true; p.over = e.target; pPtr = true;
     if (e.button === 2) { ms.no = true; push('no'); return; }
     if (e.button === 0 && !(e.target.closest && e.target.closest('button, [data-noyes], input, textarea'))) { ms.yes = true; push('yes'); }
   });
-  addEventListener('pointermove', (e) => { const p = I.pointer; p.x = e.clientX; p.y = e.clientY; p.over = e.target; });
+  addEventListener('pointermove', (e) => { if (onTouchUI(e)) return; const p = I.pointer; p.x = e.clientX; p.y = e.clientY; p.over = e.target; });
   addEventListener('pointerup', (e) => {
+    if (onTouchUI(e)) return;
     const p = I.pointer; p.x = e.clientX; p.y = e.clientY; p.down = false; rPtr = true;
     if (ms.yes) { ms.yes = false; rel.yes = true; }
     if (ms.no) { ms.no = false; rel.no = true; }

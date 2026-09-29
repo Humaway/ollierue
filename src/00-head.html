@@ -49,7 +49,7 @@ button { font: inherit; color: inherit; cursor: pointer; pointer-events: auto; b
 #obj .it.done::before { content: "\2611  "; color: var(--yes); }
 
 /* 1987 HUD */
-#hud { right: 18px; top: 14px; z-index: 3; display: flex; align-items: center; gap: 9px; padding: 6px 12px 6px 10px; border-radius: 10px;
+#hud { right: 18px; top: 14px; z-index: 7; display: flex; align-items: center; gap: 9px; padding: 6px 12px 6px 10px; border-radius: 10px;
   background: rgba(10,14,30,.55); font-size: 15px; font-weight: bold; letter-spacing: .04em; text-shadow: 0 1px 1px #000; }
 #hud .bat { position: relative; width: 34px; height: 16px; border: 2px solid #fff; border-radius: 3px; }
 #hud .bat::after { content: ""; position: absolute; right: -6px; top: 3px; width: 3px; height: 6px; background: #fff; border-radius: 0 2px 2px 0; }
@@ -71,6 +71,7 @@ button { font: inherit; color: inherit; cursor: pointer; pointer-events: auto; b
 #toast { right: 24px; bottom: 24px; z-index: 11; padding: 8px 18px; border-radius: 10px; background: rgba(20,29,58,.85); border-top: 2px solid var(--yes);
   font-size: 17px; opacity: 0; transition: opacity .35s; }
 #toast.show { opacity: 1; }
+#ui.talking #toast { bottom: calc(3.5vh + 170px); } /* never under the dialogue box */
 #swap { left: 18px; bottom: 18px; z-index: 3; width: 96px; height: 84px; }
 #swap img { position: absolute; border-radius: 10px; border: 2px solid rgba(255,255,255,.8); background: var(--navy); }
 #swap .a { left: 0; bottom: 0; width: 64px; height: 64px; z-index: 2; border-color: var(--yes); }
@@ -101,10 +102,10 @@ button { font: inherit; color: inherit; cursor: pointer; pointer-events: auto; b
 #dlg .opts.ask button.sel::before { content: none; }
 #dlg .opts.ask button.dis { border-color: #4a5170; background: transparent; color: #6d7695; }
 
-/* title and act cards */
+/* title and act cards: above #fade, so "Tuesday, 6 October 1987" reads over black */
 #tcard, #acard { inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0; text-align: center; }
-#tcard { z-index: 8; letter-spacing: .28em; font-size: 21px; text-transform: uppercase; text-shadow: 0 2px 6px #000, 0 0 18px rgba(0,0,0,.6); padding-left: .28em; }
-#acard { z-index: 8; background: #000; }
+#tcard { z-index: 11; letter-spacing: .28em; font-size: 21px; text-transform: uppercase; text-shadow: 0 2px 6px #000, 0 0 18px rgba(0,0,0,.6); padding-left: .28em; }
+#acard { z-index: 11; background: #000; }
 #acard b { font-size: 46px; letter-spacing: .3em; padding-left: .3em; margin-bottom: 18px; }
 #acard i { font-size: 22px; color: #d7dbe8; letter-spacing: .05em; }
 #acard hr { width: 64px; border: 0; border-top: 3px solid var(--yes); margin: 0 0 18px; }
@@ -218,6 +219,7 @@ button { font: inherit; color: inherit; cursor: pointer; pointer-events: auto; b
 #t-swap { right: 128px; bottom: 124px; font-size: 12px; }
 #t-bag { right: 40px; bottom: 16px; width: 64px; height: 64px; font-size: 12px; }
 #t-pause { right: 14px; top: 64px; width: 46px; height: 46px; font-size: 16px; }
+#ui.touchui #prompt { bottom: 200px; } /* clear of the stick and the YES/NO buttons on narrow phones */
 #ui.touchui #dlg { left: 12px; width: calc(100% - 228px); bottom: 12px; }
 #ui.touchui.talking #stick, #ui.touchui.talking #t-swap, #ui.touchui.talking #t-bag { opacity: 0; pointer-events: none; }
 

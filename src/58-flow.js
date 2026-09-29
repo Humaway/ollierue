@@ -132,6 +132,7 @@ const { flow, hotspots, inventory, runSteps, playCutscene } = (() => {
       if (s.wait) return p.done.then((i) => { flow.result = i; });
       return;
     }
+    if (typeof s.spawn === 'string') { world.spawn(s.spawn, s.at, s); return; } // {spawn, at, look?, set?} (set = spawn into that live set, e.g. a split's right half)
     if ('set' in s) return changeSet(s.set, s.env, s.spawn);
     if ('hold' in s) { const a = actorOf(s.hold); if (a) a.hold(s.prop ?? null, s.hand); return; }
     if ('music' in s) { mus(s.music, sk ? { cut: true } : s); return; }
@@ -143,7 +144,6 @@ const { flow, hotspots, inventory, runSteps, playCutscene } = (() => {
     if ('face' in s) { const a = actorOf(s.face); if (a) a.face(s.to, sk ? 0 : s.dur); return; }
     if ('expr' in s) { for (const [id, e] of s.expr) { const a = actorOf(id); if (a) a.setExpr(e); } return; }
     if ('act' in s) { for (const [id, anim, o] of s.act) { const a = actorOf(id); if (a) a.play(anim, o || {}); } return; }
-    if ('spawn' in s) { world.spawn(s.spawn, s.at, s); return; }
     if ('despawn' in s) { world.despawn(s.despawn); return; }
     if ('place' in s) { const a = actorOf(s.place); if (a) a.place(s.at); return; }
     if ('prop' in s) {
@@ -467,6 +467,7 @@ const { flow, hotspots, inventory, runSteps, playCutscene } = (() => {
       if (u && !solved()) console.warn('RUE: roam auto() left `until` unsolved in ' + flow.sceneId);
       return;
     }
+    if (cam.cutscene) cam.release(); // e.g. a minigame's shot straight into play: ease back to the gameplay camera
     flow.roaming = true; player.enabled = true; hotspots.reset(); showSwap();
     const t0 = clock.t;
     let hinted = !o.hint;
@@ -585,6 +586,7 @@ const { flow, hotspots, inventory, runSteps, playCutscene } = (() => {
   const flow = {
     skipping: false, scene: null, sceneId: null, stepIndex: 0, result: null,
     swap: false, follow: null, roaming: false, busy: false,
+    get cutscene() { return cutDepth > 0; }, // a cutscene (or a spot's steps) is running: the pause menu offers Skip Scene
     start, next, stop, minigame,
     skip() { // pause menu: run the rest of this cutscene instantly (state steps still apply)
       if (!cutDepth) return;

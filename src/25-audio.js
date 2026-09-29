@@ -130,11 +130,11 @@ const { AUDIO, sfx, music } = (() => {
   const pluck = (c, d, t, m, v = 0.06, lp = 1800) => tone(c, d, t, mtof(m), 0.1, { type: 'square', v, a: 0.002, d: 0.05, r: 0.03, lp, fto: 300, fgl: 0.08 });
   function marimba(c, d, t, m, dur, v = 0.14) {
     tone(c, d, t, mtof(m), dur, { v, a: 0.002, d: 0.25, r: 0.1 });
-    tone(c, d, t, mtof(m) * 4, 0.05, { v: v * 0.25, a: 0.001, d: 0.02 });
+    tone(c, d, t, mtof(m) * 4, 0.1, { v: v * 0.4, a: 0.001, d: 0.04 });
   }
   const piano = (c, d, t, m, v = 0.1) => fm(c, d, t, mtof(m), 3, { ratio: 1, index: 1.6, md: 0.25, isus: 0.08, v, a: 0.003, d: 1.3, r: 0.5 });
   const flute = (c, d, t, m, dur, v = 0.1) => { tone(c, d, t, mtof(m), dur, { v, a: 0.06, d: 0.8, s: 0.6, r: 0.25, vib: [5, 14] }); tone(c, d, t, mtof(m) * 2, dur, { v: v * 0.08, a: 0.06, r: 0.2 }); };
-  const bassN = (c, d, t, m, dur, v = 0.3, lp = 700) => { tone(c, d, t, mtof(m), dur, { type: 'triangle', v, a: 0.004, d: 0.4, s: 0.4, r: 0.08, lp }); tone(c, d, t, mtof(m - 12), dur, { v: v * 0.6, a: 0.004, d: 0.4, s: 0.4, r: 0.08 }); };
+  const bassN = (c, d, t, m, dur, v = 0.3, lp = 700) => { tone(c, d, t, mtof(m), dur, { type: 'triangle', v, a: 0.004, d: 0.4, s: 0.4, r: 0.08, lp }); tone(c, d, t, mtof(m), dur, { v: v * 0.5, a: 0.004, d: 0.4, s: 0.4, r: 0.08 }); };
   const BELL = [[0.5, 1, 1], [1, 0.8, 0.6], [1.19, 0.55, 0.45], [1.5, 0.4, 0.35], [2, 0.35, 0.25], [2.5, 0.25, 0.18]]; // ratio, level, decay share
   function bell(c, d, t, f, v, len = 8) { // Campanile: inharmonic partials, 8 s on the hum
     for (const [r, a, k] of BELL) {
@@ -265,7 +265,7 @@ const { AUDIO, sfx, music } = (() => {
     tick: [0.06, (c, d, t) => { noise(c, d, t, 0.006, { v: 0.3, a: 0.0005, d: 0.002, hp: 2500 }); tone(c, d, t, 2400, 0.012, { v: 0.05, a: 0.001, d: 0.004 }); }],
     trill: [1.05, (c, d, t) => { for (const s of [0, 0.6]) { tone(c, d, t + s, 400, 0.4, { v: 0.16, a: 0.008, r: 0.02 }); tone(c, d, t + s, 450, 0.4, { v: 0.16, a: 0.008, r: 0.02 }); } }],
     brick_ring: [1.05, (c, d, t) => brickRing(c, d, t)],
-    bell: [8.5, (c, d, t) => bell(c, d, t, mtof(62), 0.3)],
+    bell: [8.5, (c, d, t) => bell(c, d, t, mtof(62), 0.2)],
     kettle: [3.35, (c, d, t) => {
       noise(c, d, t, 3, { v: 0.2, a: 2.8, r: 0.02, bp: 350, fto: 2600, fgl: 3, q: 1.4 });
       noise(c, d, t, 3, { v: 0.12, a: 1.6, r: 0.02, brown: true, lp: 400 });
@@ -281,7 +281,7 @@ const { AUDIO, sfx, music } = (() => {
     }],
     whistle: [0.5, (c, d, t) => whistle(c, d, t, mtof(74), 0.3)], // D5: the Pudding lead is this at playbackRate
     pigeons: [1.1, (c, d, t) => {
-      for (let b = 0; b < 2; b++) for (let k = 0; k < 9; k++) noise(c, d, t + b * 0.13 + k * (0.065 + rnd() * 0.02), 0.035, { v: 0.25 * (1 - k / 12), a: 0.004, d: 0.012, bp: 700 + rnd() * 700, q: 1.3 });
+      for (let b = 0; b < 2; b++) for (let k = 0; k < 9; k++) noise(c, d, t + b * 0.13 + k * (0.065 + rnd() * 0.02), 0.035, { v: 0.8 * (1 - k / 12), a: 0.004, d: 0.012, bp: 700 + rnd() * 700, q: 1.3 });
     }],
     creak: [1.3, (c, d, t) => creak(c, d, t)],
     door_slide: [1.3, (c, d, t) => {
@@ -300,16 +300,16 @@ const { AUDIO, sfx, music } = (() => {
       noise(c, d, t, 0.2, { v: 0.35, a: 0.002, d: 0.08, lp: 3000 });
       tone(c, d, t, 65, 0.3, { v: 0.4, a: 0.003, d: 0.2 });
     }],
-    whoosh: [0.8, (c, d, t) => noise(c, d, t, 0.35, { v: 0.35, a: 0.25, r: 0.3, bp: 300, fto: 2000, fgl: 0.5, q: 1.2 })],
+    whoosh: [0.8, (c, d, t) => noise(c, d, t, 0.35, { v: 0.9, a: 0.25, r: 0.3, bp: 300, fto: 2000, fgl: 0.5, q: 1.2 })],
     zap: [0.45, (c, d, t) => {
       tone(c, d, t, 120, 0.28, { type: 'square', v: 0.12, a: 0.002, r: 0.05, lp: 2500, vib: [31, 400] });
       for (let k = 0; k < 6; k++) noise(c, d, t + rnd() * 0.3, 0.01, { v: 0.3, a: 0.0005, d: 0.004, hp: 3000 });
     }],
     typewriter: [0.1, (c, d, t) => type1(c, d, t, 0.45)],
-    footstep: [0.14, (c, d, t) => { noise(c, d, t, 0.05, { v: 0.45, a: 0.002, d: 0.02, lp: 450 }); noise(c, d, t, 0.02, { v: 0.05, a: 0.001, d: 0.008, bp: 2200 }); }],
+    footstep: [0.14, (c, d, t) => { noise(c, d, t, 0.05, { v: 1.2, a: 0.002, d: 0.02, lp: 450 }); noise(c, d, t, 0.02, { v: 0.12, a: 0.001, d: 0.008, bp: 2200 }); }],
     footstep_wet: [0.3, (c, d, t) => {
-      noise(c, d, t, 0.05, { v: 0.35, a: 0.002, d: 0.02, lp: 450 });
-      noise(c, d, t + 0.01, 0.12, { v: 0.16, a: 0.006, d: 0.05, bp: 2600, q: 0.8 });
+      noise(c, d, t, 0.05, { v: 0.9, a: 0.002, d: 0.02, lp: 450 });
+      noise(c, d, t + 0.01, 0.12, { v: 0.35, a: 0.006, d: 0.05, bp: 2600, q: 0.8 });
       tone(c, d, t + 0.04, 1400, 0.03, { to: 900, v: 0.04, a: 0.001, d: 0.015 });
     }],
     thud: [0.5, (c, d, t) => { tone(c, d, t, 80, 0.3, { to: 40, v: 0.6, a: 0.002, d: 0.1 }); noise(c, d, t, 0.1, { v: 0.4, a: 0.002, d: 0.05, lp: 300 }); }],
@@ -317,9 +317,9 @@ const { AUDIO, sfx, music } = (() => {
     applause: [3.3, (c, d, t) => {
       for (let k = 0; k < 110; k++) {
         const x = rnd();
-        noise(c, d, t + x * 2.8, 0.02, { v: 0.2 * Math.sin(Math.PI * Math.min(1, x * 1.3)) + 0.03, a: 0.001, d: 0.008, bp: 900 + rnd() * 1600, q: 1.5 });
+        noise(c, d, t + x * 2.8, 0.02, { v: 0.6 * Math.sin(Math.PI * Math.min(1, x * 1.3)) + 0.1, a: 0.001, d: 0.008, bp: 900 + rnd() * 1600, q: 1.5 });
       }
-      noise(c, d, t, 2.4, { v: 0.05, a: 0.4, r: 0.9, bp: 1500, q: 0.6 });
+      noise(c, d, t, 2.4, { v: 0.12, a: 0.4, r: 0.9, bp: 1500, q: 0.6 });
     }],
     groan: [1.7, (c, d, t) => crowdGroan(c, d, t)],
     titter: [1.3, (c, d, t) => crowdTitter(c, d, t)],
@@ -391,180 +391,156 @@ const { AUDIO, sfx, music } = (() => {
     }],
   };
 
-  // ---------------------------------------------------------- loops: name: [seconds, target RMS, recipe(ctx, dest), fold]
-  // 'xf' folds the tail over the head with a crossfade (beds); 'add' wraps note tails onto the start (music).
+  // ---------------------------------------------------------- baked loops and music stems
+  // { len, rms, whole(c, d, len): rendered in one go, bars: [count, fn(c, d, k)]: each bar rendered on its own
+  //   context (one big graph renders many times slower), tail: release time per chunk, rev: [sec, mix, damp] and
+  //   band: [lo, hi] applied over the assembled loop, xf: crossfade the tail over the head (noise beds) }
+  // Everything else wraps note and reverb tails round onto the start, so every loop is seamless.
+  const dur = (n, bpm) => n * 4 * 60 / bpm;
   const LOOPS = {
-    rain: [4, 0.05, (c, d) => { noise(c, d, 0, 4.5, { v: 0.3, brown: true, lp: 1400 }); noise(c, d, 0, 4.5, { v: 0.03, hp: 5000 }); noise(c, d, 0, 4.5, { v: 0.5, buf: DROPS, hp: 1500 }); }],
-    rain_heavy: [4, 0.09, (c, d) => {
+    rain: { len: 4, rms: 0.05, xf: 1, whole: (c, d) => { noise(c, d, 0, 4.5, { v: 0.3, brown: true, lp: 1400 }); noise(c, d, 0, 4.5, { v: 0.03, hp: 5000 }); noise(c, d, 0, 4.5, { v: 0.5, buf: DROPS, hp: 1500 }); } },
+    rain_heavy: { len: 4, rms: 0.09, xf: 1, whole: (c, d) => {
       noise(c, d, 0, 4.5, { v: 0.4, brown: true, lp: 2400 }); noise(c, d, 0, 4.5, { v: 0.06, hp: 3000 });
       noise(c, d, 0, 4.5, { v: 0.4, brown: true, lp: 200 });
       noise(c, d, 0, 4.5, { v: 0.7, buf: DROPS, hp: 1200 }); noise(c, d, 0, 4.5, { v: 0.5, buf: DROPS, hp: 1200 });
-    }],
-    hum: [2, 0.02, (c, d) => {
+    } },
+    hum: { len: 2, rms: 0.02, xf: 1, whole: (c, d) => {
       tone(c, d, 0, 100, 2.5, { type: 'sawtooth', v: 0.5, lp: 350 }); tone(c, d, 0, 100, 2.5, { v: 0.3 });
       tone(c, d, 0, 200, 2.5, { v: 0.12 }); tone(c, d, 0, 100, 2.5, { type: 'square', v: 0.04, hp: 2500 });
-    }],
-    aircon: [4, 0.025, (c, d) => {
+    } },
+    aircon: { len: 4, rms: 0.025, xf: 1, whole: (c, d) => {
       noise(c, d, 0, 4.5, { v: 0.5, brown: true, lp: 500 }); noise(c, d, 0, 4.5, { v: 0.03, bp: 1200, q: 0.5 });
       for (const s of [0.9, 2.9]) noise(c, d, s, 0.004, { v: 0.12, a: 0.0005, d: 0.002, hp: 2500 }); // the aircon ticking
-    }],
-    radio: [6, 0.05, (c, d) => { // lodge transistor radio: a far-off announcer and a band, crackling
+    } },
+    radio: { len: 6, rms: 0.05, xf: 1, whole: (c, d) => { // lodge transistor radio: a far-off announcer and a band, crackling
       const f = band(c, d, 350, 2800);
       babble(c, f, 0, 6.4, { f: 115, v: 0.3 });
       chord(c, f, 0, [57, 61, 64], 6.4, { type: 'triangle', v: 0.02, a: 0.5, r: 0.1, lp: 2000 });
-      noise(c, d, 0, 6.4, { v: 0.25, buf: CRACKLE }); noise(c, d, 0, 6.4, { v: 0.012, bp: 3000, q: 0.7 });
-    }],
-    alarm: [1, 0.12, (c, d) => siren(c, d, 0, 1.3, 0.2)],
-    dynamo: [1, 0.1, (c, d) => { // pitch follows the pedals through handle.rate()
+      noise(c, d, 0, 6.4, { v: 0.1, buf: CRACKLE, lp: 5000 }); noise(c, d, 0, 6.4, { v: 0.008, bp: 3000, q: 0.7 });
+    } },
+    alarm: { len: 1, rms: 0.12, xf: 1, whole: (c, d) => siren(c, d, 0, 1.3, 0.2) },
+    dynamo: { len: 1, rms: 0.1, xf: 1, whole: (c, d) => { // pitch follows the pedals through handle.rate()
       tone(c, d, 0, 220, 1.3, { type: 'sawtooth', v: 0.4, bp: 700, q: 2 }); tone(c, d, 0, 440, 1.3, { type: 'triangle', v: 0.1 });
       noise(c, d, 0, 1.3, { v: 0.05, bp: 1100, q: 1.5 });
-    }],
-    walkman: [6, 0.08, (c, d) => { // "Winning Is a Decision", leaking from foam headphones
+    } },
+    walkman: { len: 6, rms: 0.08, xf: 1, whole: (c, d) => { // "Winning Is a Decision", leaking from foam headphones
       babble(c, band(c, d, 900, 3500), 0, 6.4, { f: 135, v: 0.4, wob: 0.8, wobc: 60, fast: true });
       noise(c, d, 0, 6.4, { v: 0.008, hp: 5000 });
-    }],
-    clock_tick: [2, 0.01, (c, d) => { clockTick(c, d, 0.5, 3500); clockTick(c, d, 1.5, 2600); }],
-    city: [6, 0.04, (c, d) => {
+    } },
+    clock_tick: { len: 2, rms: 0.01, tail: 0.1, whole: (c, d) => { clockTick(c, d, 0.5, 3500); clockTick(c, d, 1.5, 2600); } },
+    city: { len: 6, rms: 0.04, xf: 1, whole: (c, d) => {
       const g = c.createGain(); g.gain.value = 0.8; lfo(c, g.gain, 1 / 6, 0.2); g.connect(d);
       noise(c, g, 0, 6.5, { v: 0.4, brown: true, lp: 320 }); noise(c, g, 0, 6.5, { v: 0.1, brown: true, lp: 1100 });
       noise(c, d, 0, 6.5, { v: 0.008, bp: 2000, q: 0.5 });
-    }],
-    hold_music: [4 * 4 * 60 / 100, 0.07, (c, d) => { // the store's hold music, down a phone line
-      const st = 60 / 100 / 4, bar = 16 * st, o = band(c, d, 400, 3000);
-      const CH = [[55, 59, 60, 64], [55, 57, 60, 64], [57, 60, 62, 65], [55, 59, 62, 65]], RT = [36, 45, 38, 43];
-      const MEL = [[[0, 76, 6], [6, 74, 2], [8, 72, 4], [12, 71, 4]], [[0, 72, 6], [6, 71, 2], [8, 69, 8]], [[0, 74, 6], [6, 72, 2], [8, 69, 4], [12, 65, 4]], [[0, 67, 8], [8, 71, 4], [12, 74, 4]]];
-      for (let k = 0; k < 4; k++) {
-        const t = k * bar;
-        for (const s of [0, 6, 10]) for (const m of CH[k]) fm(c, o, t + s * st, mtof(m), st * 3, { ratio: 1, index: 1.2, md: 0.3, v: 0.04, a: 0.003, d: 0.5, r: 0.2 });
-        bassN(c, o, t, RT[k], st * 7, 0.3); bassN(c, o, t + 8 * st, RT[k] + 7, st * 5, 0.3); bassN(c, o, t + 14 * st, RT[k], st * 2, 0.25);
-        for (const [s, m, l] of MEL[k]) marimba(c, o, t + s * st, m, l * st, 0.12);
-        for (let s = 0; s < 16; s += 2) hat(c, o, t + s * st, 0.02);
-      }
-    }, 'add'],
-    typing: [4, 0.03, (c, d) => { for (let x = 0.05; x < 3.9; x += rnd() < 0.12 ? 0.35 + rnd() * 0.3 : 0.07 + rnd() * 0.08) type1(c, d, x, 0.2 + rnd() * 0.15); }],
-    fluoro: [3, 0.03, (c, d) => fluoro(c, d, 0, 3.4, 0.3, [[0.6, 0.85], [2.1, 2.25]])],
+    } },
+    hold_music: { len: dur(4, 100), rms: 0.07, band: [400, 3000], bars: [4, (c, d, k) => { // the store's hold music, down a phone line
+      const st = 60 / 100 / 4, ch = [[55, 59, 60, 64], [55, 57, 60, 64], [57, 60, 62, 65], [55, 59, 62, 65]][k], rt = [36, 45, 38, 43][k];
+      const mel = [[[0, 76, 6], [6, 74, 2], [8, 72, 4], [12, 71, 4]], [[0, 72, 6], [6, 71, 2], [8, 69, 8]], [[0, 74, 6], [6, 72, 2], [8, 69, 4], [12, 65, 4]], [[0, 67, 8], [8, 71, 4], [12, 74, 4]]][k];
+      for (const s of [0, 6, 10]) for (const m of ch) fm(c, d, s * st, mtof(m), st * 3, { ratio: 1, index: 1.2, md: 0.3, v: 0.04, a: 0.003, d: 0.5, r: 0.2 });
+      bassN(c, d, 0, rt, st * 7, 0.3); bassN(c, d, 8 * st, rt + 7, st * 5, 0.3); bassN(c, d, 14 * st, rt, st * 2, 0.25);
+      for (const [s, m, l] of mel) marimba(c, d, s * st, m, l * st, 0.12);
+      for (let s = 0; s < 16; s += 2) hat(c, d, s * st, 0.02);
+    }] },
+    typing: { len: 4, rms: 0.03, tail: 0.2, bars: [4, (c, d) => { for (let x = 0.02; x < 1; x += rnd() < 0.12 ? 0.35 + rnd() * 0.3 : 0.07 + rnd() * 0.08) type1(c, d, x, 0.2 + rnd() * 0.15); }] },
+    fluoro: { len: 3, rms: 0.03, xf: 1, whole: (c, d) => fluoro(c, d, 0, 3.4, 0.3, [[0.6, 0.85], [2.1, 2.25]]) },
   };
 
-  // ---------------------------------------------------------- music stems: cue: [seconds, recipe(ctx, dest, seconds), fold]
-  const bars = (n, bpm) => n * 4 * 60 / bpm;
   const CUES = {
     // Title: one sustained pad, a slow Campanile bell every 8 bars.
-    title: [bars(8, 64), (c, d, len) => {
-      const o = rev(c, d, 3.5, 0.45, 0.7), sweep = lfoOut(c, 2 / len, 500);
-      chord(c, o, 0, [50, 57, 64, 66, 69], len, { v: 0.03, a: 3, r: 3, lp: 900, lfoF: sweep, det: [-10, -3, 6] });
-      chord(c, o, 0, [38, 50], len, { type: 'triangle', v: 0.06, a: 3, r: 3, lp: 400, det: [0] });
-      bell(c, o, 0.02, mtof(62), 0.1);
-    }],
+    title: { len: dur(8, 64), rev: [3.5, 0.45, 0.7], tail: 4, whole: (c, d, len) => {
+      chord(c, d, 0, [50, 57, 64, 66, 69], len, { v: 0.03, a: 3, r: 3, lp: 900, lfoF: lfoOut(c, 2 / len, 500), det: [-10, -3, 6] });
+      chord(c, d, 0, [38, 50], len, { type: 'triangle', v: 0.06, a: 3, r: 3, lp: 400, det: [0] });
+      bell(c, d, 0.02, mtof(62), 0.1);
+    } },
     // "The demo" by Pudding: bright lo-fi. Detuned saw chords through a low-pass, soft kick and snare,
     // vinyl crackle, and the hook his finished song will use (same key, same four chords).
-    demo: [bars(4, 88), (c, d, len) => {
-      const st = 60 / 88 / 4, bar = 16 * st, top = c.createBiquadFilter();
-      top.type = 'lowpass'; top.frequency.value = 5500; top.connect(d);
-      const o = rev(c, top, 1.2, 0.2, 0.5), wob = lfoOut(c, 5 / len, 9);
-      const CH = [[50, 57, 61, 64, 66], [50, 54, 57, 61, 66], [50, 54, 57, 59, 62], [49, 52, 55, 59, 64]], RT = [38, 35, 31, 33];
-      const HOOK = [[0, 74], [2, 81], [5, 79], [7, 81], [10, 86], [13, 78]];
-      for (let k = 0; k < 4; k++) {
-        const t = k * bar;
-        chord(c, o, t, CH[k], 9 * st, { v: 0.022, a: 0.02, d: 0.8, s: 0.5, r: 0.4, lp: 1600, wob });
-        chord(c, o, t + 10 * st, CH[k], 5 * st, { v: 0.018, a: 0.02, d: 0.5, s: 0.5, r: 0.4, lp: 1400, wob });
-        for (const [s, l] of [[0, 6], [7, 3], [10, 5]]) bassN(c, o, t + s * st, RT[k], l * st, 0.3, 500);
-        for (const s of [0, 7, 10]) kick(c, o, t + s * st, s ? 0.45 : 0.6);
-        for (const s of [4, 12]) snare(c, o, t + s * st, 0.16);
-        for (let s = 0; s < 16; s += 2) hat(c, o, t + (s + (s % 4 ? 0.33 : 0)) * st, s % 4 ? 0.025 : 0.035); // swung 8ths
-        for (const [s, m] of HOOK) fm(c, o, t + s * st, mtof(m), 0.3, { ratio: 1, index: 1.1, md: 0.4, v: 0.05, a: 0.004, d: 0.5, r: 0.3 });
-      }
-      noise(c, top, 0, len + 0.5, { v: 0.2, buf: CRACKLE, bp: 3000, q: 0.5 });
-      noise(c, top, 0, len + 0.5, { v: 0.004, hp: 4000 });
-    }],
+    demo: { len: dur(4, 88), rev: [1.2, 0.2, 0.5], band: [30, 5500], bars: [4, (c, d, k) => {
+      const st = 60 / 88 / 4, wob = lfoOut(c, 0.45, 9), rt = [38, 35, 43, 45][k];
+      const ch = [[50, 57, 61, 64, 66], [50, 54, 57, 61, 66], [50, 54, 57, 59, 62], [49, 52, 55, 59, 64]][k];
+      chord(c, d, 0, ch, 9 * st, { v: 0.045, a: 0.02, d: 0.8, s: 0.5, r: 0.4, lp: 2400, wob });
+      chord(c, d, 10 * st, ch, 5 * st, { v: 0.036, a: 0.02, d: 0.5, s: 0.5, r: 0.4, lp: 2000, wob });
+      for (const [s, l] of [[0, 6], [7, 3], [10, 5]]) bassN(c, d, s * st, rt, l * st, 0.11, 500);
+      for (const s of [0, 7, 10]) kick(c, d, s * st, s ? 0.18 : 0.25);
+      for (const s of [4, 12]) snare(c, d, s * st, 0.16);
+      for (let s = 0; s < 16; s += 2) hat(c, d, (s + (s % 4 ? 0.33 : 0)) * st, s % 4 ? 0.035 : 0.05); // swung 8ths
+      for (const [s, m] of [[0, 74], [2, 81], [5, 79], [7, 81], [10, 86], [13, 78]]) fm(c, d, s * st, mtof(m), 0.3, { ratio: 1, index: 1.6, md: 0.4, v: 0.07, a: 0.004, d: 0.5, r: 0.3 });
+    }], whole: (c, d, len) => { noise(c, d, 0, len, { v: 0.2, buf: CRACKLE, bp: 3000, q: 0.5, r: 0.02 }); noise(c, d, 0, len, { v: 0.004, hp: 4000, r: 0.02 }); } },
     // Reddy gameplay: light and bouncy; octave bass, muted offbeat plucks, a marimba tune. F major, 112 BPM.
-    reddy: [bars(8, 112), (c, d) => {
-      const st = 60 / 112 / 4, bar = 16 * st, o = rev(c, d, 0.8, 0.12, 0.4);
-      const CH = [[53, 57, 60], [50, 53, 57], [50, 53, 58], [52, 55, 60], [53, 57, 60], [52, 57, 60], [50, 53, 58], [52, 55, 58]];
-      const RT = [41, 38, 46, 36, 41, 45, 46, 36];
+    reddy: { len: dur(8, 112), rev: [0.8, 0.12, 0.4], bars: [8, (c, d, k) => {
+      const st = 60 / 112 / 4, rt = [41, 38, 46, 36, 41, 45, 46, 36][k];
+      const ch = [[53, 57, 60], [50, 53, 57], [50, 53, 58], [52, 55, 60], [53, 57, 60], [52, 57, 60], [50, 53, 58], [52, 55, 58]][k];
       const A = [[0, 72, 2], [3, 69, 1], [4, 72, 2], [8, 77, 3], [12, 76, 2], [14, 74, 2]];
-      const MEL = [A, [[0, 74, 3], [4, 69, 2], [6, 72, 2], [8, 74, 4], [14, 77, 2]], [[0, 74, 2], [2, 72, 2], [4, 70, 4], [8, 65, 2], [10, 67, 2], [12, 70, 4]],
+      const mel = [A, [[0, 74, 3], [4, 69, 2], [6, 72, 2], [8, 74, 4], [14, 77, 2]], [[0, 74, 2], [2, 72, 2], [4, 70, 4], [8, 65, 2], [10, 67, 2], [12, 70, 4]],
         [[0, 72, 4], [6, 76, 2], [8, 79, 4], [12, 76, 4]], A, [[0, 76, 3], [4, 72, 2], [6, 69, 2], [8, 72, 4], [14, 76, 2]],
-        [[0, 77, 2], [2, 74, 2], [4, 70, 4], [8, 74, 2], [10, 72, 2], [12, 70, 2], [14, 69, 2]], [[0, 67, 2], [2, 69, 2], [4, 70, 2], [6, 72, 2], [8, 76, 4], [12, 79, 4]]];
-      for (let k = 0; k < 8; k++) {
-        const t = k * bar;
-        for (let s = 0; s < 16; s += 2) tone(c, o, t + s * st, mtof(RT[k] + (s % 4 ? 12 : 0)), st * 1.2, { type: 'triangle', v: 0.3, a: 0.003, d: 0.08, s: 0.2, r: 0.04, lp: 900 });
-        for (const s of [2, 6, 10, 14]) for (const m of CH[k]) pluck(c, o, t + s * st, m, 0.05);
-        for (const [s, m, l] of MEL[k]) marimba(c, o, t + s * st, m, l * st, 0.13);
-        kick(c, o, t, 0.55); kick(c, o, t + 8 * st, 0.5);
-        for (const s of [4, 12]) { noise(c, o, t + s * st, 0.05, { v: 0.12, a: 0.001, d: 0.015, bp: 3000, q: 1 }); tone(c, o, t + s * st, 330, 0.03, { v: 0.06, a: 0.001, d: 0.012 }); }
-        for (let s = 2; s < 16; s += 4) hat(c, o, t + s * st, 0.04);
-        for (let s = 0; s < 16; s++) hat(c, o, t + s * st, 0.012);
-      }
-    }],
+        [[0, 77, 2], [2, 74, 2], [4, 70, 4], [8, 74, 2], [10, 72, 2], [12, 70, 2], [14, 69, 2]], [[0, 67, 2], [2, 69, 2], [4, 70, 2], [6, 72, 2], [8, 76, 4], [12, 79, 4]]][k];
+      for (let s = 0; s < 16; s += 2) tone(c, d, s * st, mtof(rt + (s % 4 ? 12 : 0)), st * 1.2, { type: 'triangle', v: 0.22, a: 0.003, d: 0.08, s: 0.2, r: 0.04, lp: 900 });
+      for (const s of [2, 6, 10, 14]) for (const m of ch) pluck(c, d, s * st, m, 0.05, 2600);
+      for (const [s, m, l] of mel) marimba(c, d, s * st, m, l * st, 0.13);
+      kick(c, d, 0, 0.4); kick(c, d, 8 * st, 0.35);
+      for (const s of [4, 12]) { noise(c, d, s * st, 0.05, { v: 0.12, a: 0.001, d: 0.015, bp: 3000, q: 1 }); tone(c, d, s * st, 330, 0.03, { v: 0.06, a: 0.001, d: 0.012 }); }
+      for (let s = 2; s < 16; s += 4) hat(c, d, s * st, 0.04);
+      for (let s = 0; s < 16; s++) hat(c, d, s * st, 0.012);
+    }] },
     // JARVIS Sale: the same store, faster and busier. 144 BPM, sixteenth arps, stabs, four on the floor.
-    reddy_frantic: [bars(8, 144), (c, d) => {
-      const st = 60 / 144 / 4, bar = 16 * st, o = rev(c, d, 0.6, 0.1, 0.4);
-      const CH = [[53, 57, 60], [50, 53, 57], [50, 53, 58], [48, 52, 55], [53, 57, 60], [50, 53, 57], [49, 53, 56], [48, 52, 55]];
-      const RT = [41, 38, 46, 36, 41, 38, 37, 36], ARP = [0, 1, 2, 3, 2, 1];
-      for (let k = 0; k < 8; k++) {
-        const t = k * bar, ch = CH[k];
-        for (let s = 0; s < 16; s += 2) tone(c, o, t + s * st, mtof(RT[k] + (s === 6 || s === 14 ? 12 : 0)), st * 1.1, { type: 'sawtooth', v: 0.14, a: 0.002, d: 0.06, s: 0.3, r: 0.03, lp: 800 });
-        for (let s = 0; s < 16; s++) { const j = ARP[s % 6]; pluck(c, o, t + s * st, (j === 3 ? ch[0] + 12 : ch[j]) + 12, 0.035, 3000); }
-        for (const s of [0, 3, 6, 10]) chord(c, o, t + s * st, ch.map((m) => m + 12), st * 1.2, { v: 0.018, a: 0.003, d: 0.1, s: 0.2, r: 0.05, lp: 2500 });
-        for (const s of [0, 4, 8, 12]) kick(c, o, t + s * st, 0.55);
-        for (const s of (k === 7 ? [4, 12, 13, 14, 15] : [4, 12])) snare(c, o, t + s * st, s > 12 ? 0.14 : 0.2);
-        for (let s = 0; s < 16; s++) hat(c, o, t + s * st, s % 2 ? 0.035 : 0.022);
-      }
-    }],
+    reddy_frantic: { len: dur(8, 144), rev: [0.6, 0.1, 0.4], bars: [8, (c, d, k) => {
+      const st = 60 / 144 / 4, rt = [41, 38, 46, 36, 41, 38, 37, 36][k], ARP = [0, 1, 2, 3, 2, 1];
+      const ch = [[53, 57, 60], [50, 53, 57], [50, 53, 58], [48, 52, 55], [53, 57, 60], [50, 53, 57], [49, 53, 56], [48, 52, 55]][k];
+      for (let s = 0; s < 16; s += 2) tone(c, d, s * st, mtof(rt + (s === 6 || s === 14 ? 12 : 0)), st * 1.1, { type: 'sawtooth', v: 0.07, a: 0.002, d: 0.06, s: 0.3, r: 0.03, lp: 800 });
+      for (let s = 0; s < 16; s++) { const j = ARP[s % 6]; pluck(c, d, s * st, (j === 3 ? ch[0] + 12 : ch[j]) + 12, 0.06, 3000); }
+      for (const s of [0, 3, 6, 10]) chord(c, d, s * st, ch.map((m) => m + 12), st * 1.2, { v: 0.025, a: 0.003, d: 0.1, s: 0.2, r: 0.05, lp: 3500 });
+      for (const s of [0, 4, 8, 12]) kick(c, d, s * st, 0.25);
+      for (const s of (k === 7 ? [4, 12, 13, 14, 15] : [4, 12])) snare(c, d, s * st, s > 12 ? 0.14 : 0.2);
+      for (let s = 0; s < 16; s++) hat(c, d, s * st, s % 2 ? 0.035 : 0.022);
+    }] },
     // 1987 Dublin: gentle, wistful, D minor, 72 BPM. Pad, harp arpeggios, a whistle-like tune in bars 5-8.
-    dublin: [bars(8, 72), (c, d) => dublinCue(c, d, 72,
+    dublin: { len: dur(8, 72), rev: [3, 0.4, 0.7], tail: 2.5, bars: [8, dublinBar(72,
       [[50, 53, 57, 62], [46, 53, 58, 62], [48, 53, 57, 60], [48, 52, 55, 60], [50, 53, 57, 62], [46, 53, 58, 62], [43, 50, 55, 58], [45, 52, 57, 61]],
       [38, 34, 41, 36, 38, 34, 43, 33],
-      [[[0, 69, 1], [1, 74, 1], [2, 76, 1], [3, 77, 1]], [[0, 77, 2], [2, 74, 1], [3, 70, 1]], [[0, 74, 1.5], [1.5, 72, 0.5], [2, 70, 1], [3, 67, 1]], [[0, 73, 2], [2, 69, 2]]], 750, 1)],
+      [[[0, 69, 1], [1, 74, 1], [2, 76, 1], [3, 77, 1]], [[0, 77, 2], [2, 74, 1], [3, 70, 1]], [[0, 74, 1.5], [1.5, 72, 0.5], [2, 70, 1], [3, 67, 1]], [[0, 73, 2], [2, 69, 2]]], 1100, 1)] },
     // Act Three: the same tune lifts to D major (and toward Pudding's chords).
-    dublin_major: [bars(8, 76), (c, d) => dublinCue(c, d, 76,
+    dublin_major: { len: dur(8, 76), rev: [3, 0.4, 0.7], tail: 2.5, bars: [8, dublinBar(76,
       [[50, 54, 57, 62], [47, 50, 55, 59], [47, 50, 54, 59], [45, 52, 57, 61], [50, 54, 57, 62], [47, 50, 55, 59], [47, 52, 55, 59], [45, 52, 57, 61]],
       [38, 43, 35, 33, 38, 43, 40, 33],
-      [[[0, 69, 1], [1, 74, 1], [2, 76, 1], [3, 78, 1]], [[0, 79, 2], [2, 78, 1], [3, 74, 1]], [[0, 76, 1.5], [1.5, 74, 0.5], [2, 71, 1], [3, 67, 1]], [[0, 73, 2], [2, 76, 2]]], 1000, 2)],
+      [[[0, 69, 1], [1, 74, 1], [2, 76, 1], [3, 78, 1]], [[0, 79, 2], [2, 78, 1], [3, 74, 1]], [[0, 76, 1.5], [1.5, 74, 0.5], [2, 71, 1], [3, 67, 1]], [[0, 73, 2], [2, 76, 2]]], 1400, 2)] },
     // The Buttery radio: generic (original) 1987 synth-pop. A minor, 116 BPM, band-limited like a radio.
-    buttery_radio: [bars(8, 116), (c, d) => {
-      const st = 60 / 116 / 4, bar = 16 * st, o = rev(c, band(c, d, 140, 6000), 0.9, 0.15, 0.4), big = rev(c, o, 0.5, 0.6, 0.3);
-      const CH = [[57, 60, 64], [57, 60, 65], [55, 60, 64], [55, 59, 62]], RT = [45, 41, 36, 43];
-      const LEAD = [[[0, 76, 2], [2, 74, 2], [4, 72, 4], [8, 69, 4], [12, 72, 4]], [[0, 72, 4], [4, 74, 2], [6, 72, 2], [8, 69, 8]],
-        [[0, 76, 2], [2, 74, 2], [4, 72, 4], [8, 79, 4], [12, 76, 4]], [[0, 74, 6], [6, 71, 2], [8, 74, 4], [12, 67, 4]]];
-      for (let k = 0; k < 8; k++) {
-        const t = k * bar, ch = CH[k % 4];
-        for (let s = 0; s < 16; s += 2) tone(c, o, t + s * st, mtof(RT[k % 4] + (s === 6 || s === 14 ? 12 : 0)), st * 1.6, { type: 'sawtooth', v: 0.16, a: 0.003, d: 0.1, s: 0.3, r: 0.03, lp: 900, fto: 300, fgl: 0.1 });
-        chord(c, o, t, ch, bar - 0.05, { v: 0.02, a: 0.05, r: 0.3, lp: 2000 });
-        for (const s of [3, 6, 11]) for (const m of ch) fm(c, o, t + s * st, mtof(m + 12), st * 2, { ratio: 1, index: 2.5, md: 0.15, v: 0.03, a: 0.002, d: 0.3, r: 0.15 });
-        if (k < 4) for (let s = 0; s < 16; s += 2) fm(c, o, t + s * st, mtof(ch[(s / 2) % 3] + 24), st * 2, { ratio: 3.5, index: 1, md: 0.1, v: 0.02, a: 0.002, d: 0.2, r: 0.1 });
-        else for (const [s, m, l] of LEAD[k - 4]) tone(c, o, t + s * st, mtof(m), l * st, { type: 'square', v: 0.05, a: 0.01, d: 0.3, s: 0.6, r: 0.08, vib: [6, 12], lp: 2800 });
-        for (const s of [0, 8, 10]) kick(c, o, t + s * st, 0.65);
-        for (const s of [4, 12]) snare(c, big, t + s * st, 0.3);
-        for (let s = 0; s < 16; s += 2) hat(c, o, t + s * st, s === 14 ? 0.04 : 0.04, s === 14);
+    buttery_radio: { len: dur(8, 116), rev: [0.9, 0.15, 0.4], band: [140, 6000], bars: [8, (c, d, k) => {
+      const st = 60 / 116 / 4, ch = [[57, 60, 64], [57, 60, 65], [55, 60, 64], [55, 59, 62]][k % 4], rt = [45, 41, 36, 43][k % 4], big = rev(c, d, 0.5, 0.6, 0.3);
+      for (let s = 0; s < 16; s += 2) tone(c, d, s * st, mtof(rt + (s === 6 || s === 14 ? 12 : 0)), st * 1.6, { type: 'sawtooth', v: 0.16, a: 0.003, d: 0.1, s: 0.3, r: 0.03, lp: 900, fto: 300, fgl: 0.1 });
+      chord(c, d, 0, ch, 16 * st - 0.05, { v: 0.02, a: 0.05, r: 0.3, lp: 2000 });
+      for (const s of [3, 6, 11]) for (const m of ch) fm(c, d, s * st, mtof(m + 12), st * 2, { ratio: 1, index: 2.5, md: 0.15, v: 0.03, a: 0.002, d: 0.3, r: 0.15 });
+      if (k < 4) for (let s = 0; s < 16; s += 2) fm(c, d, s * st, mtof(ch[(s / 2) % 3] + 24), st * 2, { ratio: 3.5, index: 1, md: 0.1, v: 0.02, a: 0.002, d: 0.2, r: 0.1 });
+      else for (const [s, m, l] of [[[0, 76, 2], [2, 74, 2], [4, 72, 4], [8, 69, 4], [12, 72, 4]], [[0, 72, 4], [4, 74, 2], [6, 72, 2], [8, 69, 8]],
+        [[0, 76, 2], [2, 74, 2], [4, 72, 4], [8, 79, 4], [12, 76, 4]], [[0, 74, 6], [6, 71, 2], [8, 74, 4], [12, 67, 4]]][k - 4]) {
+        tone(c, d, s * st, mtof(m), l * st, { type: 'square', v: 0.05, a: 0.01, d: 0.3, s: 0.6, r: 0.08, vib: [6, 12], lp: 2800 });
       }
-    }],
+      for (const s of [0, 8, 10]) kick(c, d, s * st, 0.45);
+      for (const s of [4, 12]) snare(c, big, s * st, 0.3); // big 80s snare
+      for (let s = 0; s < 16; s += 2) hat(c, d, s * st, 0.04, s === 14);
+    }] },
     // Emotional scenes: sparse piano-like FM notes, lots of air.
-    emotional: [bars(8, 66), (c, d) => {
-      const b = 60 / 66, o = rev(c, d, 3.5, 0.45, 0.7);
-      const N = [[0, 0, [50, 62, 66]], [0, 2, [69]], [1, 0, [47, 59, 62]], [1, 2.5, [66]], [2, 0, [43, 55, 59]], [2, 2, [62]], [2, 3, [67]],
-        [3, 0, [45, 57, 61]], [3, 2, [64]], [4, 0, [50, 66]], [4, 2, [62]], [4, 3, [69]], [5, 0, [47, 62, 66]], [5, 2, [71]],
-        [6, 0, [43, 59, 67]], [6, 1, [62]], [6, 2, [71]], [7, 0, [45, 61, 64]], [7, 2.5, [57]]];
-      for (const [bar, beat, ms] of N) for (const m of ms) piano(c, o, (bar * 4 + beat) * b, m, m < 52 ? 0.08 : 0.1);
-    }],
-    // Black Monday: one held note (A3, periodic in 4 s so the loop is seamless).
-    held_note: [4, (c, d) => {
+    emotional: { len: dur(8, 66), rev: [3.5, 0.45, 0.7], tail: 4, bars: [8, (c, d, k) => {
+      const b = 60 / 66, N = [[[0, [50, 62, 66]], [2, [69]]], [[0, [47, 59, 62]], [2.5, [66]]], [[0, [43, 55, 59]], [2, [62]], [3, [67]]], [[0, [45, 57, 61]], [2, [64]]],
+        [[0, [50, 66]], [2, [62]], [3, [69]]], [[0, [47, 62, 66]], [2, [71]]], [[0, [43, 59, 67]], [1, [62]], [2, [71]]], [[0, [45, 61, 64]], [2.5, [57]]]][k];
+      for (const [beat, ms] of N) for (const m of ms) piano(c, d, beat * b, m, m < 52 ? 0.08 : 0.1);
+    }] },
+    // Black Monday: one held note (A3; periodic in 4 s, so the loop is seamless).
+    held_note: { len: 4, xf: 1, whole: (c, d) => {
       const g = c.createGain(); g.gain.value = 0.75; lfo(c, g.gain, 0.5, 0.2); g.connect(d);
       tone(c, g, 0, 220, 4.6, { v: 0.25, a: 0.01, r: 0.01 });
       tone(c, g, 0, 220.25, 4.6, { type: 'triangle', v: 0.08, a: 0.01, r: 0.01, lp: 800 });
       tone(c, g, 0, 110, 4.6, { v: 0.1, a: 0.01, r: 0.01 });
-    }, 'xf'],
+    } },
   };
-  function dublinCue(c, d, bpm, CH, RT, MEL, lp, arpRatio) {
-    const b = 60 / bpm, bar = 4 * b, o = rev(c, d, 3, 0.4, 0.7), ARP = [0, 1, 2, 3, 2, 1, 2, 3];
-    for (let k = 0; k < 8; k++) {
-      const t = k * bar, ch = CH[k];
-      chord(c, o, t, ch, bar, { v: 0.018, a: 1, r: 1.5, lp });
-      tone(c, o, t, mtof(RT[k]), bar * 0.9, { v: 0.2, a: 0.05, d: 1.5, s: 0.4, r: 0.5 });
-      tone(c, o, t, mtof(RT[k]), bar * 0.9, { type: 'triangle', v: 0.08, a: 0.05, d: 1.5, s: 0.4, r: 0.5, lp: 400 });
-      for (let i = 0; i < 8; i++) fm(c, o, t + i * b / 2, mtof(ch[ARP[i]] + 12), 0.6, { ratio: arpRatio, index: 1.5, md: 0.15, v: i % 2 ? 0.035 : 0.05, a: 0.003, d: 0.5, r: 0.4 });
-      if (k >= 4) for (const [s, m, l] of MEL[k - 4]) flute(c, o, t + s * b, m, l * b * 0.95, 0.09);
-    }
+  function dublinBar(bpm, CH, RT, MEL, lp, arpRatio) {
+    const b = 60 / bpm, ARP = [0, 1, 2, 3, 2, 1, 2, 3];
+    return (c, d, k) => {
+      const ch = CH[k];
+      chord(c, d, 0, ch, 4 * b, { v: 0.025, a: 1, r: 1.5, lp });
+      tone(c, d, 0, mtof(RT[k]), 3.6 * b, { v: 0.06, a: 0.05, d: 1.5, s: 0.4, r: 0.5 });
+      tone(c, d, 0, mtof(RT[k]), 3.6 * b, { type: 'triangle', v: 0.06, a: 0.05, d: 1.5, s: 0.4, r: 0.5, lp: 500 });
+      for (let i = 0; i < 8; i++) fm(c, d, i * b / 2, mtof(ch[ARP[i]] + 12), 0.6, { ratio: arpRatio, index: 1.5, md: 0.15, v: i % 2 ? 0.035 : 0.05, a: 0.003, d: 0.5, r: 0.4 });
+      if (k >= 4) for (const [s, m, l] of MEL[k - 4]) flute(c, d, s * b, m, l * b * 0.95, 0.09);
+    };
   }
   const BED = { dublin: 0.6, dublin_major: 0.35 }; // cues that play over the rain loop
 
@@ -572,15 +548,15 @@ const { AUDIO, sfx, music } = (() => {
   const STEP = 60 / 92 / 4, BAR = 16 * STEP;
   const MEL = [0, 4, 7, 4, 2, 5, 9, 7, 4, 7, 12, 9, 7, 4, 2, 0].map((n) => Math.pow(2, n / 12)); // D5 F#5 A5 F#5 E5 G5 B5 A5 F#5 A5 D6 B5 A5 F#5 E5 D5
   const DEF = [[0, 4, 8, 12], [4, 12], [0, 2, 4, 6, 8, 10, 12, 14], [0, 2, 5, 7, 10, 13]].map((on) => Array.from({ length: 16 }, (_, i) => on.includes(i)));
-  const LANES = [['dynamo', 'dynamo_hit', 0.9, 0.5], ['till', 'till', 0.45, 0.35], ['kettle', 'kettle_click', 0.45, 0.3], ['whistle', 'whistle', 0.55, 0.4]]; // sample, sfx, gain, bleep gain
+  const LANES = [['dynamo', 'dynamo_hit', 0.55, 0.35], ['till', 'till', 0.4, 0.35], ['kettle', 'kettle_click', 0.3, 0.3], ['whistle', 'whistle', 0.75, 0.5]]; // sample, sfx, gain, bleep gain
   const SONG_PADS = [[50, 54, 57, 62], [50, 55, 59, 62], [50, 54, 59, 62], [49, 52, 57, 64]], SONG_BASS = [38, 43, 35, 33]; // D G Bm A
-  const STEMS = () => [
-    ...SONG_PADS.map((ch, i) => ['pad' + i, BAR + 1, (c, d, t) => chord(c, d, t, ch, BAR, { v: 0.03, a: 0.25, r: 0.7, lp: 1300, det: [-9, 0, 9] })]),
-    ...SONG_BASS.map((m, i) => ['bass' + i, 1, (c, d, t) => bassN(c, d, t, m, 0.7, 0.35, 900)]),
-    ['bleep0', 0.15, (c, d, t) => tone(c, d, t, 98, 0.1, { type: 'square', to: 65, v: 0.25, a: 0.002, d: 0.06, lp: 1500 })],
-    ['bleep1', 0.12, (c, d, t) => { tone(c, d, t, 262, 0.08, { type: 'square', v: 0.16, a: 0.002, d: 0.04 }); noise(c, d, t, 0.05, { v: 0.1, a: 0.001, d: 0.02, bp: 3000 }); }],
-    ['bleep2', 0.05, (c, d, t) => tone(c, d, t, 2093, 0.025, { type: 'square', v: 0.07, a: 0.001, d: 0.01 })],
-    ['bleep3', 0.22, (c, d, t) => tone(c, d, t, mtof(74), 0.16, { type: 'square', v: 0.12, a: 0.004, d: 0.12, s: 0.4, r: 0.04, lp: 3500 })],
+  const STEMS = () => [ // [kind, index, seconds, recipe]
+    ...SONG_PADS.map((ch, i) => ['pad', i, BAR + 1, (c, d, t) => chord(c, d, t, ch, BAR, { v: 0.03, a: 0.25, r: 0.7, lp: 1800, det: [-9, 0, 9] })]),
+    ...SONG_BASS.map((m, i) => ['bass', i, 1, (c, d, t) => bassN(c, d, t, m, 0.7, 0.35, 900)]),
+    ['bleep', 0, 0.15, (c, d, t) => tone(c, d, t, 98, 0.1, { type: 'square', to: 65, v: 0.25, a: 0.002, d: 0.06, lp: 1500 })],
+    ['bleep', 1, 0.12, (c, d, t) => { tone(c, d, t, 262, 0.08, { type: 'square', v: 0.16, a: 0.002, d: 0.04 }); noise(c, d, t, 0.05, { v: 0.1, a: 0.001, d: 0.02, bp: 3000 }); }],
+    ['bleep', 2, 0.05, (c, d, t) => tone(c, d, t, 2093, 0.025, { type: 'square', v: 0.07, a: 0.001, d: 0.01 })],
+    ['bleep', 3, 0.22, (c, d, t) => tone(c, d, t, mtof(74), 0.16, { type: 'square', v: 0.12, a: 0.004, d: 0.12, s: 0.4, r: 0.04, lp: 3500 })],
   ];
   const players = [];
   let pumpId = 0;
@@ -601,11 +577,11 @@ const { AUDIO, sfx, music } = (() => {
       lead: pat[3] && pat[3].some(Boolean) ? pat[3] : DEF[3], // the breakdown never goes silent
       qt: new Float64Array(64), qi: new Int8Array(64), qh: 0, qn: 0 };
     LANES.forEach(([k, name, v1, v2], l) => { const ok = has(k) && B[name]; p.lane.push(ok ? B[name] : S.bleep[l]); p.lg.push(gainTo(out, ok ? v1 : v2)); });
-    p.bassG = gainTo(out, 0.55); p.padG = gainTo(out, 0.45); p.fxG = gainTo(out, 0.45);
+    p.bassG = gainTo(out, 0.35); p.padG = gainTo(out, 0.7); p.fxG = gainTo(out, 0.45);
     p.first = mode === 'credits' || p.trill ? 1 : 0; // intro bar
     if (has('rain') && L.rain) {
       p.rain = ctx.createBufferSource(); p.rain.buffer = L.rain; p.rain.loop = true;
-      p.rain.connect(gainTo(out, 0.8)); p.rain.start(p.t);
+      p.rain.connect(gainTo(out, 0.5)); p.rain.start(p.t);
     }
     players.push(p);
     if (!pumpId) pumpId = setInterval(pump, 25);
@@ -674,28 +650,38 @@ const { AUDIO, sfx, music } = (() => {
     const k = Math.min(rms / Math.max(1e-9, Math.sqrt(s / d.length)), 0.95 / pk);
     for (let i = 0; i < d.length; i++) d[i] *= k;
   }
-  // Render recipes back to back in one context, then slice each into its own buffer.
-  async function strip(items, rate) {
-    let T = 0;
-    const at = items.map((it) => { const t = T; T += it[1] + 0.05; return t; });
-    const c = new OfflineAudioContext(1, Math.ceil(T * rate), rate);
-    items.forEach((it, i) => it[2](c, c.destination, at[i]));
-    const d = (await c.startRendering()).getChannelData(0), out = {};
-    items.forEach((it, i) => { const s = Math.round(at[i] * rate); out[it[0]] = d.slice(s, s + Math.round(it[1] * rate)); });
-    return out;
+  async function render(len, rate, fn) { // one small offline context -> samples
+    const c = new OfflineAudioContext(1, Math.ceil(len * rate), rate);
+    fn(c, c.destination);
+    return (await c.startRendering()).getChannelData(0);
   }
-  // Render a loop: len + tail, then fold the tail onto the head ('add' for music, 'xf' crossfade for beds).
-  async function bake(len, fn, mode, rms) {
-    const tail = mode === 'add' ? 4 : 0.3, c = new OfflineAudioContext(1, Math.ceil((len + tail) * MR), MR);
-    fn(c, c.destination, len);
-    const d = (await c.startRendering()).getChannelData(0), n = Math.round(len * MR), x = d.length - n;
-    for (let i = 0; i < x; i++) {
-      if (mode === 'add') d[i] += d[n + i];
-      else { const a = (i / x) * Math.PI / 2; d[i] = d[i] * Math.sin(a) + d[n + i] * Math.cos(a); }
+  async function bake(o) {
+    const n = Math.round(o.len * MR), dry = new Float32Array(n), tail = o.tail ?? 1.5, jobs = [];
+    const add = (d, at) => { for (let i = 0; i < d.length; i++) dry[(at + i) % n] += d[i]; };
+    if (o.whole) jobs.push(render(o.len + (o.xf ? 0.3 : tail), MR, (c, d) => o.whole(c, d, o.len)).then((d) => {
+      if (!o.xf) return add(d, 0);
+      const x = d.length - n; // crossfade the continuation over the head
+      for (let i = 0; i < n; i++) dry[i] += i < x ? d[i] * Math.sin((i / x) * Math.PI / 2) + d[n + i] * Math.cos((i / x) * Math.PI / 2) : d[i];
+    }));
+    if (o.bars) {
+      const [cnt, fn] = o.bars, bl = o.len / cnt;
+      for (let k = 0; k < cnt; k++) jobs.push(render(bl + tail, MR, (c, d) => fn(c, d, k)).then((d) => add(d, Math.round(k * bl * MR))));
     }
-    const o = d.subarray(0, n);
-    scale(o, rms);
-    return buf(o, MR);
+    await Promise.all(jobs);
+    let out = dry;
+    if (o.rev || o.band) { // one pass over the assembled loop; the reverb tail wraps round too
+      const sec = o.rev ? o.rev[0] : 0;
+      out = await render(o.len + sec, MR, (c, d) => {
+        const s = c.createBufferSource();
+        let x = o.rev ? rev(c, d, o.rev[0], o.rev[1], o.rev[2]) : d;
+        if (o.band) x = band(c, x, o.band[0], o.band[1]);
+        s.buffer = buf(dry, MR); s.connect(x); s.start(0);
+      });
+      for (let i = n; i < out.length; i++) out[i - n] += out[i];
+      out = out.subarray(0, n);
+    }
+    scale(out, o.rms ?? 0.12);
+    return buf(out, MR);
   }
   function loopable(n, x, fill) { // JS-generated texture with its end crossfaded into its start
     const a = new Float32Array(n + x);
@@ -724,49 +710,42 @@ const { AUDIO, sfx, music } = (() => {
     for (let n = 1; n < 40; n++) PULSE[0][n] = 2 * Math.sin(n * Math.PI * 0.125) / (n * Math.PI);
     DIST = new Float32Array(256);
     for (let i = 0; i < 256; i++) DIST[i] = Math.tanh(3 * (i / 127.5 - 1)) / Math.tanh(3);
-
-    const jobs = [];
-    jobs.push(strip(Object.keys(SFX).map((k) => [k, SFX[k][0], SFX[k][1]]), SR).then((o) => { for (const k in o) B[k] = buf(o[k], SR); }));
+    // many small contexts in parallel, a yield between groups so the loader keeps animating
+    await Promise.all(Object.keys(SFX).map((k) => render(SFX[k][0], SR, (c, d) => SFX[k][1](c, d, 0)).then((d) => { B[k] = buf(d, SR); })));
     await idle();
-    jobs.push(strip(STEMS(), SR).then((o) => { for (const k in o) { const i = +k.slice(-1); S[k.slice(0, -1)][i] = buf(o[k], SR); } }));
+    await Promise.all(STEMS().map(([k, i, len, fn]) => render(len, SR, (c, d) => fn(c, d, 0)).then((d) => { S[k][i] = buf(d, SR); })));
     await idle();
-    jobs.push(renderVoices());
+    await renderVoices();
     await idle();
-    for (const k in LOOPS) { const [len, rms, fn, mode] = LOOPS[k]; jobs.push(bake(len, fn, mode || 'xf', rms).then((b) => { L[k] = b; })); await idle(); }
-    for (const k in CUES) { const [len, fn, mode] = CUES[k]; jobs.push(bake(len, fn, mode || 'add', 0.12).then((b) => { M[k] = b; })); await idle(); }
-    await Promise.all(jobs);
+    await Promise.all(Object.keys(LOOPS).map((k) => bake(LOOPS[k]).then((b) => { L[k] = b; })));
+    await idle();
+    await Promise.all(Object.keys(CUES).map((k) => bake(CUES[k]).then((b) => { M[k] = b; })));
   }
 
   // Voice blips (SPEC section 6): per character 4 vowel-coloured variants + a rising one for question tails.
   const WAVE_V = { sine: 0.5, triangle: 0.4, square: 0.15, pulse: 0.2, sawtooth: 0.18 };
   async function renderVoices() {
-    const items = [];
-    for (const id in CHARACTERS) {
+    await Promise.all(Object.keys(CHARACTERS).map(async (id) => {
       const v = CHARACTERS[id].voice;
-      for (let k = 0; k < 5; k++) {
+      const a = await Promise.all([0, 1, 2, 3, 4].map((k) => {
         const rising = k === 4, len = v.len * (rising ? 1.5 : 1);
-        items.push([id + '|' + k, len + 0.06, (c, d, t) => {
-          const f = v.f * (v.tumble && !rising ? [1.1, 0.94, 1.04, 0.9][k] : 1);
-          const pk = c.createBiquadFilter();
+        return render(len + 0.06, SR, (c, d) => {
+          const f = v.f * (v.tumble && !rising ? [1.1, 0.94, 1.04, 0.9][k] : 1), pk = c.createBiquadFilter();
           pk.type = 'peaking'; pk.frequency.value = [700, 1100, 1600, 2300, 1100][k]; pk.gain.value = v.mono ? 0 : 7; pk.Q.value = 1.8;
           pk.connect(d);
-          tone(c, pk, t, f, len, {
+          tone(c, pk, 0, f, len, {
             type: v.wave === 'pulse' ? 'square' : v.wave, wave: v.wave === 'pulse' ? c.createPeriodicWave(PULSE[0], PULSE[1]) : null,
             v: WAVE_V[v.wave] || 0.3, a: v.soft ? 0.015 : 0.003, d: len * (v.soft ? 0.8 : 0.6), s: 0.3, r: v.soft ? 0.04 : 0.015,
             lp: v.filter, q: 1, to: rising ? f * 1.35 : v.mono ? 0 : f * (v.tumble ? [0.92, 1.06, 0.95, 1.08][k] : 0.96), gl: len,
           });
-        }]);
-      }
-    }
-    const o = await strip(items, SR);
-    for (const id in CHARACTERS) {
-      const v = CHARACTERS[id].voice, a = [0, 1, 2, 3, 4].map((k) => o[id + '|' + k]);
+        });
+      }));
       let s = 0, n = 0;
       for (const x of a) for (let i = 0; i < x.length; i++) { s += x[i] * x[i]; n++; }
       const g = 0.09 / Math.max(1e-9, Math.sqrt(s / n)); // every voice equally loud
       for (const x of a) for (let i = 0; i < x.length; i++) x[i] *= g;
       V[id] = { n: a.slice(0, 4).map((x) => buf(x, SR)), q: buf(a[4], SR), min: v.len + 0.02 + (v.gap || 0), mono: !!v.mono, also: v.also, last: 0 };
-    }
+    }));
   }
 
   // ---------------------------------------------------------- runtime
@@ -895,26 +874,29 @@ const { AUDIO, sfx, music } = (() => {
     if (!ctx) return;
     o = o || {};
     if (cue && cur && cur.name === cue) return;
-    const t = ctx.currentTime, cut = !!o.cut, had = !!cur;
-    if (cur) { endCue(cur, cut ? 0.012 : (o.fade ?? 1)); cur = null; }
+    const t = ctx.currentTime, cut = !!o.cut, had = !!cur, st = (typeof state !== 'undefined' && state) || {};
+    // walkman -> warbly (3.4 into 3.5): the same song carries on over the cut, only its colour changes
+    const keep = cur && cur.p && /^pudding_/.test(cur.name) && /^pudding_/.test(cue) ? cur.p : null;
+    if (keep) cur.p = null;
+    if (cur) { endCue(cur, cut || keep ? 0.012 : (o.fade ?? 1)); cur = null; }
     if (!cue) return;
-    const g = ctx.createGain(), fin = cut ? 0.012 : o.fade ?? (had ? 1 : 0.05);
+    const g = ctx.createGain(), fin = cut || keep ? 0.012 : o.fade ?? (had ? 1 : 0.05);
+    const song = (dest) => { if (!keep) return player(st.pattern, st.samples, 'loop', { dest }); keep.out.disconnect(); keep.out.connect(dest); return keep; };
     g.connect(busM); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1, t + fin);
     cur = { name: cue, g, src: [], p: null };
-    const st = (typeof state !== 'undefined' && state) || {};
     if (M[cue]) {
       const s = ctx.createBufferSource(); s.buffer = M[cue]; s.loop = true; s.connect(g); s.start(t + 0.01); cur.src.push(s);
       if (BED[cue] && L.rain) { const r = ctx.createBufferSource(); r.buffer = L.rain; r.loop = true; r.connect(gainTo(g, BED[cue])); r.start(t + 0.01); cur.src.push(r); }
     } else if (cue === 'credits') cur.p = player(st.pattern, st.samples, 'credits', { dest: g });
     else if (cue === 'pudding_walkman') { // the finished song, through Rue's Walkman
       const pk = ctx.createBiquadFilter(); pk.type = 'peaking'; pk.frequency.value = 1500; pk.gain.value = 3; pk.connect(g);
-      cur.p = player(st.pattern, st.samples, 'loop', { dest: band(ctx, pk, 120, 7000) });
+      cur.p = song(band(ctx, pk, 120, 7000));
     } else if (cue === 'pudding_warbly') { // 3.5: older, thin and warbly (wow + flutter on a short delay)
       const dl = ctx.createDelay(0.1), sh = ctx.createWaveShaper();
       dl.delayTime.value = 0.012; sh.curve = DIST; sh.connect(gainTo(g, 1.2));
       cur.src.push(lfo(ctx, dl.delayTime, 0.55, 0.004), lfo(ctx, dl.delayTime, 6.5, 0.0006));
       dl.connect(band(ctx, gainTo(sh, 0.5), 380, 2400));
-      cur.p = player(st.pattern, st.samples, 'loop', { dest: dl });
+      cur.p = song(dl);
     }
   }
   music.silence = (on) => { silenced = !!on; applyOptions(); };

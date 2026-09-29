@@ -351,7 +351,7 @@ const { world, cam, frame, player } = (() => {
         m.on = false; a.p.walk = false;
         if (LOCO[a.anim]) setAnim(a, 'idle');
         const res = m.res; m.res = null;
-        if (!isNaN(m.face)) { startFace(a, m.face, 0.3); a.fc.res = res; } else if (res) res();
+        if (!isNaN(m.face)) { startFace(a, m.face, 0.3); if (a.fc.on) a.fc.res = res; else if (res) res(); } else if (res) res();   // already facing: resolve now
       } else {
         a.pos.x += dx / d * step; a.pos.z += dz / d * step;
         a.pos.y = floorAt(e, a.pos.x, a.pos.z, m.y0 + (m.to.y - m.y0) * (1 - (d - step) / m.d0));
@@ -570,20 +570,56 @@ const { world, cam, frame, player } = (() => {
     }
     return 1;
   }
-  // is someone who isn't in the shot standing between the lens (direction dx,dz, distance D) and the subjects?
-  function blocked(L, dx, dz, D, e) {
+  // where frameInto puts the lens for direction d, distance D (not TOP)
+  function lensAt(P, L, d, D, o, size) {
+    if (o.angle === 'high') P.set(L.x + d.x * D * C25, L.y + D * S25, L.z + d.z * D * C25);
+    else if (o.angle === 'low') { P.set(L.x + d.x * D * C20, L.y - D * S20, L.z + d.z * D * C20); P.y = Math.max(P.y, (nAct ? feetY : L.y - 1.2) + 0.15); }
+    else P.set(L.x + d.x * D, nAct ? (size === 'WIDE' ? feetY + 1.55 : eyeY) : L.y, L.z + d.z * D);
+    if (o.height) P.y += o.height;
+    return P;
+  }
+  // first set surface FACING the lens between lens P and point L (what would actually render in front of the
+  // subject; back faces, hidden props and see-through glass don't count). 0 = clear. Shot cuts only, never per frame.
+  const RC = new THREE.Raycaster(), HITS = [], tl = V(), tr = V();
+  let hitD = 0;
+  function rayWalk(o) {
+    if (!o.visible) return;
+    if (o.isMesh && !o.isSkinnedMesh) { const m = o.material; if (!(m && m.transparent && m.opacity < 0.6)) o.raycast(RC, HITS); }
+    const ch = o.children;
+    for (let i = 0; i < ch.length; i++) rayWalk(ch[i]);
+  }
+  function occluded(P, L, e) {
+    tr.subVectors(L, P);
+    const len = tr.length();
+    if (len < 0.35) return 0;
+    RC.set(P, tr.divideScalar(len)); RC.near = 0.02; RC.far = len - 0.3;
+    HITS.length = 0; rayWalk(e.group);
+    let m = 0;
+    for (let i = 0; i < HITS.length; i++) if (!m || HITS[i].distance < m) m = HITS[i].distance;
+    HITS.length = 0;
+    return m;
+  }
+  // is the lens low inside a collider (counter, desk: colliders have no height, so only below ~1.1 m), behind a surface facing it, or is someone who isn't in the shot
+  // standing between the lens and the subjects? (hitD = distance to the occluding surface, when that's the reason)
+  function blocked(L, d, D, o, size, e) {
+    hitD = 0;
+    lensAt(tl, L, d, D, o, size);
+    const cl = e && e.def.colliders;
+    if (cl && tl.y < 1.1) for (let i = 0; i < cl.length; i++) { const b = cl[i]; if (tl.x > b[0] - 0.08 && tl.x < b[2] + 0.08 && tl.z > b[1] - 0.08 && tl.z < b[3] + 0.08) return true; }
     for (let i = 0; i < A.length; i++) {
       const a = A[i];
       if (a.set !== e || !a.root.visible) continue;
       let sub = false;
       for (let j = 0; j < nS; j++) if (SA[j] === a) sub = true;
       if (sub) continue;
-      const ax = a.pos.x - L.x, az = a.pos.z - L.z, t = ax * dx + az * dz;
-      if (t > 0.25 && t < D + 0.3 && Math.abs(ax * dz - az * dx) < 0.45) return true;
+      const ax = a.pos.x - L.x, az = a.pos.z - L.z, t = ax * d.x + az * d.z;
+      if (t > 0.25 && t < D + 0.3 && Math.abs(ax * d.z - az * d.x) < 0.45) return true;
     }
-    return false;
+    hitD = occluded(tl, L, e);
+    return hitD > 0;
   }
-  const TURNS = [0, 0.6, -0.6, 1.2, -1.2];
+  const TURNS = [0, 0.6, -0.6, 1.2, -1.2, 1.57, -1.57];
+  const GP = { set: null, pos: V() }, GST = { base: V(), pushT: 0 };   // a stand-in 'player' at a group, for set cameras
   function distFor(d, L, size, dist, fv, fit) {
     if (!fit) return dist ?? CONFIG.dist[size] ?? (size === 'TOP' ? 1.5 : CONFIG.dist.MID);
     const tanH = Math.tan(fv * DEG / 2) * aspectNow(), mg = size === 'WIDE' ? 1 : 0.6;   // fit everyone with a margin
@@ -637,24 +673,34 @@ const { world, cam, frame, player } = (() => {
     const fv = o.fov ?? (size === 'ECU' ? CONFIG.ecuFov : CONFIG.fov), fit = o.dist == null && (size === 'TWO' || size === 'THREE' || (size === 'WIDE' && nS > 1));
     const top = o.angle === 'top' || size === 'TOP';
     let D = distFor(d, L, size, o.dist, fv, fit);
-    if (!top && !o.facing && blocked(L, d.x, d.z, D, e)) {   // a clean frame: swing round (35°, 70°) if someone else is in the way
+    let pull = 1;
+    if (!top && !o.facing && blocked(L, d, D, o, size, e)) {   // a clean frame: swing round (35°, 70°, 90° for one person) if the lens is in or behind a wall, or someone else is in the way
       t4.copy(d);
-      for (let k = 1; k <= TURNS.length; k++) {
-        if (k === TURNS.length) { d.copy(t4); D = distFor(d, L, size, o.dist, fv, fit); break; }
+      const nT = nS > 1 ? 5 : TURNS.length;
+      for (let k = 1; k <= nT; k++) {
+        if (k === nT) {                   // nowhere clean: keep the intended angle but come in front of whatever is in the way,
+          d.copy(t4); D = distFor(d, L, size, o.dist, fv, fit);   // or (a WIDE, or a group that can't) take the set's own camera for where they stand
+          if (blocked(L, d, D, o, size, e) && hitD > 0) { const len = tl.distanceTo(L); pull = (len - hitD - 0.15) / len; }
+          const zc = nS > 1 && (size === 'WIDE' || pull < 0.3) && zoneCam(e, L);
+          if (zc && e.def.cams[zc]) { GP.set = e; GP.pos.set(L.x, L.y - 1.2, L.z); setCamInto(out, e, zc, GP, 0, true, GST); out.up.set(-d.x, 0, -d.z); return true; }
+          pull = clamp(pull, 0.25, 1);
+          break;
+        }
         const c = Math.cos(TURNS[k]), sn = Math.sin(TURNS[k]);
         d.set(t4.x * c + t4.z * sn, 0, -t4.x * sn + t4.z * c);
         D = distFor(d, L, size, o.dist, fv, fit);
-        if (!blocked(L, d.x, d.z, D, e)) break;
+        if (!blocked(L, d, D, o, size, e)) break;
       }
     }
     out.up.set(-d.x, 0, -d.z);           // "up" for near-vertical views (crane from the sky, top-downs)
-    if (top) { Pp.set(L.x, L.y + D, L.z); out.up.copy(f); }
-    else if (o.angle === 'high') Pp.set(L.x + d.x * D * C25, L.y + D * S25, L.z + d.z * D * C25);
-    else if (o.angle === 'low') { Pp.set(L.x + d.x * D * C20, L.y - D * S20, L.z + d.z * D * C20); Pp.y = Math.max(Pp.y, (nAct ? feetY : L.y - 1.2) + 0.15); }
-    else Pp.set(L.x + d.x * D, nAct ? (size === 'WIDE' ? feetY + 1.55 : eyeY) : L.y, L.z + d.z * D);
-    if (o.height) Pp.y += o.height;
+    if (top) { Pp.set(L.x, L.y + D, L.z); out.up.copy(f); if (o.height) Pp.y += o.height; }
+    else { lensAt(Pp, L, d, D, o, size); if (pull < 1) Pp.sub(L).multiplyScalar(pull).add(L); }
     if (o.offset) { Pp.x += d.z * o.offset; Pp.z -= d.x * o.offset; L.x += d.z * o.offset; L.z -= d.x * o.offset; }
-    const s = top ? 1 : fitZones(Pp, L, e);
+    const fz = top ? 1 : fitZones(Pp, L, e), s = fz * pull;
+    if (size === 'WIDE' && nS > 1 && fz < 0.6) {   // a room too small for a wide: the set's own camera for where they stand
+      const zc = zoneCam(e, L);
+      if (zc && e.def.cams[zc]) { GP.set = e; GP.pos.set(L.x, L.y - 1.2, L.z); setCamInto(out, e, zc, GP, 0, true, GST); return true; }
+    }
     out.fov = s < 1 ? Math.min(75, 2 * Math.atan(Math.tan(fv * DEG / 2) / s) / DEG) : fv;
     return true;
   }
@@ -677,10 +723,10 @@ const { world, cam, frame, player } = (() => {
 
   // gameplay: set cams + zones, or an override
   const G = { name: '', mode: null, opts: null, st: { base: V(), pushT: 0 } };
-  const zoneCam = (e, pa) => {
-    const zs = e.def.zones;
-    if (!pa || !zs) return '';
-    for (let i = 0; i < zs.length; i++) { const b = zs[i].box; if (pa.pos.x >= b[0] && pa.pos.x <= b[2] && pa.pos.z >= b[1] && pa.pos.z <= b[3]) return zs[i].cam; }
+  const zoneCam = (e, pa) => {         // pa = an actor or a point
+    const zs = e.def.zones, p = pa && (pa.pos || pa);
+    if (!p || !zs) return '';
+    for (let i = 0; i < zs.length; i++) { const b = zs[i].box; if (p.x >= b[0] && p.x <= b[2] && p.z >= b[1] && p.z <= b[3]) return zs[i].cam; }
     return '';
   };
   function setCamInto(out, e, name, pa, dt, cut, st) {
@@ -1098,7 +1144,6 @@ const { world, cam, frame, player } = (() => {
     if (camera.near !== near) { camera.near = near; lastLW = 0; }
     const lw = splitE ? Math.round(w * (slide.on ? 0.5 + 0.5 * smooth(slide.t / 0.6) : 0.5)) : w;
     if (camera.fov !== fov || lw !== lastLW || h !== lastH) { camera.fov = fov; camera.aspect = lw / h; camera.updateProjectionMatrix(); }
-    if (typeof AUDIO !== 'undefined' && AUDIO.listener) AUDIO.listener(camera);
     if (!splitE) {
       renderer.render(e.scene, camera);
     } else {
@@ -1115,6 +1160,7 @@ const { world, cam, frame, player } = (() => {
       renderer.setScissorTest(false); renderer.setViewport(0, 0, w, h);
     }
     lastLW = lw; lastW = w; lastH = h;
+    if (typeof AUDIO !== 'undefined' && AUDIO.listener) AUDIO.listener(camera);   // after the render: matrixWorld is current
     for (let i = 0; i < A.length; i++) if (shown(A[i])) A[i].pos.copy(A[i].keep);
   }
 

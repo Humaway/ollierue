@@ -757,7 +757,7 @@ const menus = (() => {
   function pauseMenu() {
     const its = [{ label: 'Resume', act: M.resume }];
     if (typeof inventory !== 'undefined') its.push({ label: 'Inventory', act: () => { M.resume(); inventory.open(); } });
-    if (typeof cam !== 'undefined' && cam.cutscene) its.push({ label: 'Skip Scene', act: () => confirm('Skip?', () => { M.resume(); if (flow.skip) flow.skip(); else flow.skipping = true; }, pauseMenu) });
+    if (typeof flow !== 'undefined' && flow.cutscene) its.push({ label: 'Skip Scene', act: () => confirm('Skip?', () => { M.resume(); if (flow.skip) flow.skip(); else flow.skipping = true; }, pauseMenu) });
     its.push({ label: 'Options', act: () => optionsMenu(pauseMenu) });
     its.push({ label: 'Controls', act: () => controlsMenu(pauseMenu) });
     its.push({ label: 'Quit to Title', act: () => confirm('Quit to the title screen? This scene will restart from its beginning.', quit, pauseMenu) });
