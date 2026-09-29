@@ -704,6 +704,9 @@ SETS.square = (() => {
     bx(-23.52, 1.38, 7.0, -23.4, 1.52, 7.12, 0x8a2a2a, CL); cy(-23.4, 1.38, 6.8, 0.035, 0.03, 0.2, 7, 0xf2f2ee, CL);
     bx(-24.36, 1.38, 6.86, -24.04, 1.56, 6.98, 0x5a2a20, CL); bx(-24.33, 1.4, 6.855, -24.14, 1.54, 6.86, 0xb8b8b0, CL); cy(-24.09, 1.45, 6.855, 0.02, 0.02, 0.01, 6, 0x222222, CL);
     bx(-24.3, 1.56, 6.91, -24.1, 1.58, 6.93, 0x222222, CL); put(new THREE.CylinderGeometry(0.004, 0.004, 0.5, 3).rotateX(0.4).rotateZ(-0.5).translate(-24.02, 1.8, 6.88), 0xcccccc, CL);
+    // portable typewriter between the radio and the caddy (2.5's POV pan: desk phone, kettle cord, typewriter, radio)
+    bx(-23.98, 1.38, 6.66, -23.6, 1.47, 6.94, 0x2e3a36, CL); bx(-23.95, 1.47, 6.66, -23.63, 1.49, 6.79, 0x1a1a1a, CL); bx(-23.94, 1.49, 6.67, -23.64, 1.5, 6.77, 0xd8d4c8, CL);
+    bx(-24.0, 1.47, 6.85, -23.58, 1.53, 6.92, 0x111111, CL); bx(-23.9, 1.5, 6.9, -23.68, 1.72, 6.905, 0xf4f2ea, CL);
     bx(-22.25, F0, 7.0, -21.75, 0.95, 7.2, 0x6a6660, CL); bx(-22.2, 0.6, 6.99, -21.8, 0.64, 7.0, 0x222222, M.heat); bx(-22.2, 0.72, 6.99, -21.8, 0.76, 7.0, 0x222222, M.heat);
     quad(-23.9, 2.27, 7.185, PI, 0.46, 0.58, M.cal, 0, 0, 1, 1);
     const frame = (x, y, z, r, w, h) => { bc(x, y, z, Math.abs(Math.cos(r)) * w + 0.02, h, Math.abs(Math.sin(r)) * w + 0.02, 0x3a2414, 0, CL); quad(x + Math.sin(r) * 0.012, y, z + Math.cos(r) * 0.012, r, w - 0.05, h - 0.05, M.photo, 0, 0, 1, 1); };

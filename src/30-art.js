@@ -1341,9 +1341,10 @@ Object.assign(ANIMS, (() => {
       P.torso.rotation.x = 0.6 + 0.015 * S(t * 2); P.head.rotation.x = -0.3; P.neck.rotation.x = -0.1;
       arm(r, 1, 0.13, 0.02, 0.3, 1, -0.3, -0.6); arm(r, -1, 0.13, 0.02, 0.3, 1, -0.3, -0.6);
     },
-    sleep(r, t) {
+    sleep(r, t, p) {
       const P = r.parts, d = r.d;
       if (r.seated) {
+        sit(r, t, p);   // keep the seated hips and legs (pose() resets them before a non-upper anim)
         P.torso.rotation.x = 0.75 + 0.015 * S(t * 1.1); P.neck.rotation.x = 0.1; P.head.rotation.set(0.25, 0.6, 0.25);
         arm(r, 1, 0.02, 0.3, 0.3, 1, 0, -0.2); arm(r, -1, 0.02, 0.32, 0.32, 1, 0, -0.2);
         P.handL.rotation.z = 1.2; P.handR.rotation.z = -1.2;
