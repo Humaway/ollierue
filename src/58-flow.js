@@ -176,11 +176,7 @@ const { flow, hotspots, inventory, runSteps, playCutscene } = (() => {
     if ('sample' in s) { learnSample(s.sample); return; }
     if ('objective' in s) { if (Array.isArray(s.objective)) objective.list(s.objective); else objective(s.objective); return; }
     if ('env' in s) { world.env(s.env, sk ? 0 : s.dur || 0); return; }
-    if ('split' in s) {
-      if (!s.split) { world.split(null, s); return; }
-      const sp = s.split, g = G;
-      return Promise.all([world.preload(sp.left.set), world.preload(sp.right.set)]).then(() => { if (g === G) world.split(sp, s); });
-    }
+    if ('split' in s) { world.split(s.split, s); return; } // world builds/shows both sets itself
     if ('timelapse' in s) return timelapse(s.timelapse);
     if ('title' in s) return ui.title(s.title, s.dur);
     if ('actCard' in s) return ui.actCard(s.actCard);
@@ -190,12 +186,11 @@ const { flow, hotspots, inventory, runSteps, playCutscene } = (() => {
   function move(s) {
     const a = actorOf(s.move);
     if (!a) return;
-    if (flow.skipping) { a.place(s.to); return; }
-    const p = a.moveTo(s.to, s);
-    if (s.nowait) return;
+    const p = a.moveTo(s.to, s); // world jumps straight there while flow.skipping
+    if (s.nowait || flow.skipping) return;
     let done = false;
     p.then(() => { done = true; });
-    return waitUntil(() => done).then(() => { if (!done) a.place(s.to); }); // skipped mid-walk: jump there
+    return waitUntil(() => done).then(() => { if (!done) a.moveTo(s.to, s); }); // skipped mid-walk: jump there
   }
 
   // The stare: camera locked, music silent, no UI; the world and its ambient sounds carry on.
@@ -362,8 +357,6 @@ const { flow, hotspots, inventory, runSteps, playCutscene } = (() => {
     return {
       list, used, update,
       reset() { near = null; holdH = null; },
-      add(h) { list.push(h); },
-      remove(id) { const i = list.findIndex((h) => h.id === id); if (i >= 0) list.splice(i, 1); },
       trigger(x) { // run a spot by id (autoplay helpers, content)
         const h = typeof x === 'string' ? list.find((e) => e.id === x) : x;
         if (!h) { console.warn('RUE: no hotspot ' + x); return Promise.resolve(); }
