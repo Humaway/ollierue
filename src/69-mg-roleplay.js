@@ -45,8 +45,7 @@ MINIGAMES.role_play = (() => {
     const crown = g(new THREE.CylinderGeometry(0.1, 0.118, 0.07, 10), 0x6d6250, 0, 0.228, 0.012, -0.12); crown.scale.set(1.02, 1, 1.14); cap.add(crown);
     cap.add(g(new THREE.BoxGeometry(0.18, 0.014, 0.08), 0x575040, 0, 0.212, 0.14, 0.3));
     const shell = g(new THREE.SphereGeometry(0.128, 10, 5, 0, PI * 2, 0, PI / 2), 0xc8322a, 0, 0.165, 0.004); shell.scale.set(1.02, 0.95, 1.2); helmet.add(shell);
-    for (const x of [-0.05, 0, 0.05]) { const v = g(new THREE.BoxGeometry(0.018, 0.02, 0.26), 0x1c1c1e, x, 0.283 - Math.abs(x) * 0.4, 0.004); helmet.add(v); }
-    helmet.add(g(new THREE.BoxGeometry(0.012, 0.012, 0.2), 0x1c1c1e, 0.09, 0.13, 0.06, 0.6), g(new THREE.BoxGeometry(0.012, 0.012, 0.2), 0x1c1c1e, -0.09, 0.13, 0.06, 0.6));
+    helmet.add(g(new THREE.BoxGeometry(0.16, 0.012, 0.06), 0x1c1c1e, 0, 0.2, 0.145, 0.35));   // the visor
     const wrap = g(new THREE.TorusGeometry(1, 0.34, 5, 12), 0x2d6a4f, 0, 0, 0, PI / 2); scarf.add(wrap);
     const tail = g(new THREE.BoxGeometry(0.075, 0.32, 0.03), 0x2d6a4f, 0, 0, 0, 0.08); tail.name = 'tail'; scarf.add(tail);
     for (const h of [cap, helmet, scarf]) h.visible = false;

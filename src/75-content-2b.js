@@ -182,10 +182,11 @@
     { par: [say('rue19', 'See you, Australia. And Other Australia.'),
       { do: async (c) => { glanceAt(c, 'rue19', 'chase', 1.2); await c.wait(0.5); if (!c.flow.skipping) glanceAt(c, 'rue19', 'luka', 2.4); } }] },   // (to Luka)
     // [TWO-SHOT · the boys, left standing in the rain]
-    { shot: 'TWO', on: ['chase', 'luka'] },
+    { shot: 'CAM', pos: [-11.5, 1.6, 0.85], look: [-13.9, 1.3, 0.87], fov: 42 },   // from where Rue stood, looking back at them
     { expr: [['luka', 'stunned']] },
     say('luka', '…Other Australia.'),
     { expr: [['luka', 'neutral']] },
+    { flag: 'met_rue' },
   ];
 
   // =================================================================== 2.5 — "What's a JARVIS?"
@@ -272,10 +273,10 @@
     { expr: [['luka', 'stunned'], ['chase', 'stunned']] },
     { par: [{ stare: 2 }, { do: async (c) => { glanceAt(c, 'rue19', 'luka', 0.7); await c.wait(0.75); glanceAt(c, 'rue19', 'chase', 0.7); await c.wait(0.7); actor(c, 'rue19').play('chew', { dur: 1 }); } }] },
     // [WIDE · exterior] The Buttery from outside, in the rain. A bus goes past. One second.
-    { prop: 'bus', fn: (o) => o.userData.go() },
-    { wait: 0.3 },
     { shot: 'INSERT', at: 'exterior' },
-    { wait: 1 },
+    { wait: 0.4 },
+    { prop: 'bus', fn: (o) => o.userData.go() },   // it wipes across the lens a third of a second later
+    { wait: 0.9 },
     // [TWO-SHOT · the same frame as before] One second. They haven't moved. Rue now has a fresh cup of tea.
     { prop: 'fresh_tea', visible: true },
     TWOSHOT,
@@ -328,6 +329,7 @@
     { wait: 6.2 },
     say('chase', 'Luka. I need a USB-C port.'),
     say('luka', "It's 1987."),
+    { flag: 'no_usbc' },
     // [WIDE · outside the lodge window, in the rain] Chase's shout, muffled through the glass.
     { place: 'chase', at: [-21.55, 0.46, 5.95, H] }, { place: 'luka', at: [-22.5, 0.46, 5.4, H] },
     { shot: 'CAM', pos: [-15.6, 1.9, 7.4], look: [-21.2, 1.5, 5.9], fov: 42 },
@@ -456,6 +458,7 @@
           { prop: 'bike', visible: false },
           { set: 'lab', env: 'day', spawn: { luka: [0.2, 0, 8.4, 0.3], chase: [-0.5, 0, 8.2, 0.3] } },
           { do: labDress },
+          { shot: 'INSERT', at: 'lab_wide' },   // (a lab angle to fade up on; the release eases into play from here)
           { fade: 'in', dur: 0.5 },
         ] },
       { id: 'wire', at: 'declan_bench', r: 1.7, verb: 'Wire it up', once: true, flag: 'wire_go',
@@ -585,7 +588,7 @@
     { fade: 'out', dur: 0.4 },
     { prop: 'bike_rig', visible: true },
     { do: (c) => unsit(c, 'declan') },
-    { place: 'declan', at: [4.25, 0, 13.3, -2.0] }, { place: 'chase', at: 'bike_side' }, { place: 'luka', at: [2.5, 0, 12.9, 2.6] },
+    { place: 'declan', at: [4.25, 0, 13.3, -2.0] }, { place: 'chase', at: 'bike_side' }, { place: 'luka', at: [1.3, 0, 12.6, 1.0] },
     { shot: 'INSERT', at: 'bike_rig' },
     { act: [['declan', 'point']] },
     { fade: 'in', dur: 0.4 },

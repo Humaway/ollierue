@@ -795,7 +795,9 @@ const { AUDIO, sfx, music } = (() => {
     s.buffer = B[name];
     if (o && o.rate) s.playbackRate.value = o.rate;
     g.gain.value = o && o.vol != null ? o.vol : 1;
-    s.connect(g); place(g, o, false).connect(busS);
+    let n = g;
+    if (o && o.lp) { n = ctx.createBiquadFilter(); n.type = 'lowpass'; n.frequency.value = o.lp; g.connect(n); } // o.lp: muffled (through a door)
+    s.connect(g); place(n, o, false).connect(busS);
     s.start();
   }
 
