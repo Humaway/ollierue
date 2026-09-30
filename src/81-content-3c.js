@@ -103,6 +103,16 @@
     c.ui.card(null);
     c.cam.shot({ shot: 'CAM', pos: [V1.x + fx * fwd, V1.y + up, V1.z + fz * fwd], look: [V1.x, V1.y, V1.z], fov });
   }
+  // a close on someone's face and what's in their hands (the midpoint), from in front of them
+  function faceAndHands(c, id, dist = 1.0, fov = 40) {
+    const a = actor(c, id), g = a && a.rig.attach.gripR;
+    if (!g) return;
+    a.root.updateMatrixWorld(true); g.getWorldPosition(V1); a.eyePos(V2);
+    V1.add(V2).multiplyScalar(0.5);
+    const fx = Math.sin(a.rotY), fz = Math.cos(a.rotY);
+    c.ui.card(null);
+    c.cam.shot({ shot: 'CAM', pos: [V1.x + fx * dist, V1.y + 0.12, V1.z + fz * dist], look: V1.toArray(), fov });
+  }
   const faceOut = (c, name) => { const g = kit[name]; if (g) g.rotation.set(0, PI, 0); };   // label / keypad toward the lens
   function drop(c, id) { const a = actor(c, id); if (a && a.held) { const o = a.held; a.hold(null); o.visible = false; } }
 
@@ -161,7 +171,12 @@
     };
     addUpdate(u);
   }
-  function rue(c) { const a = actor(c, 'rue58'); if (a) RIGS.rue = a.rig; return a; }
+  // Rue's rig (pooled): headphones and Walkman only in the car (3.5)
+  function rue(c) {
+    const a = actor(c, 'rue58');
+    if (a) { RIGS.rue = a.rig; for (const n of ['headphones', 'walkman', 'brick']) if (a.rig.attach[n]) a.rig.attach[n].visible = false; }
+    return a;
+  }
   // Rue's box: its home is the car's back seat (3.7 leaves it on the bench; it only shows in 3.5 and 3.7)
   function boxToCar(c) {
     const b = c.world.prop('rue_box'), car = c.world.prop('car_black');
@@ -205,7 +220,7 @@
     c.cam.shot({ shot: 'CAM', pos: V2.multiplyScalar(0.49).add(V1).toArray(), look: V1.toArray(), fov: 30 });
   }
   // [PULL OUT] back and out through the far rear window: his lap, the Walkman, the headphones, the box on the seat, the car
-  const CAR_SIDE = { pos: [-1.05, 1.3, 21.1], look: [-2.62, 0.98, 21.3], fov: 44 };
+  const CAR_SIDE = { pos: [-1.0, 1.34, 21.05], look: [-2.62, 1.1, 21.3], fov: 48 };
   const pullOut = (c) => glideFromHere(c, CAR_SIDE, 5);
   // [CLOSE · Rue] from between the front seats (a computed close lands in the roof)
   function carClose(c, dy = 0, fov = 40) {
@@ -341,9 +356,23 @@
   const DIFFS = ['halloween', 'casual', 'wall', 'poster', 'calendar', 'sign'];
   const found = (s) => { let n = 0; for (const d of DIFFS) if (s.flags['diff_' + d]) n++; return n; };
   const me = (text) => ({ do: (c) => c.say(c.state.active, text) });   // the one who noticed says it
-  const look = (at, fov, card) => ({ do: (c) => { const a = actor(c, c.state.active); if (a) a.face(at, 0); c.cam.shot({ shot: 'POV', from: c.state.active, at, fov }); c.ui.card(card ? card[0] : null, card && card[1]); } });
+  // a look from the eyes of whoever noticed it (the other one steps in behind, out of the view)
+  function behind(c) {
+    const a = actor(c, c.state.active), f = c.flow.follow && actor(c, c.flow.follow);
+    if (!a || !f) return;
+    const fx = Math.sin(a.rotY), fz = Math.cos(a.rotY);
+    f.place([a.pos.x - fx * 0.9 - fz * 0.45, 0, a.pos.z - fz * 0.9 + fx * 0.45, a.rotY]);
+  }
+  function eyeLens(c, at, o) {
+    const a = actor(c, c.state.active), an = c.world.anchor(at);
+    if (!a || !an) return;
+    a.face(at, 0); behind(c);
+    a.eyePos(V1); V2.subVectors(an.at, V1).normalize().multiplyScalar(0.22).add(V1);
+    c.cam.shot(Object.assign({ shot: 'CAM', pos: V2.toArray(), look: an.at.toArray() }, o));
+  }
+  const look = (at, fov, card) => ({ do: (c) => { eyeLens(c, at, { fov }); c.ui.card(card ? card[0] : null, card && card[1]); } });
   // 1.4's push on the display wall, from whoever is looking down the aisle now: it lands on four empty tethers
-  const WALL_PUSH = { shot: 'POV', at: 'display_wall', move: 'push', amount: 0.6, dur: 6, fov: 26 };
+  const WALL_PUSH = { move: 'push', amount: 0.6, dur: 6, fov: 26 };
   // "Differences glow slightly after a minute": a faint warm shimmer over each one still unfound
   const GLOW = { halloween: [1.5, 1.35, -2.7], casual: [5.35, 1.9, -10.25], wall: [-2.0, 1.25, -14.1], poster: [10.85, 1.55, -11.28],
     calendar: [10.9, 1.55, -10.35], sign: [-4.9, 0.7, 1.3] };
@@ -385,7 +414,7 @@
   async function visit(c, where, id) {
     const a = actor(c, c.state.active), f = c.flow.follow && actor(c, c.flow.follow);
     if (a) a.place(where);
-    if (f) f.place([where[0] + 0.7, 0, where[2] + 0.5, where[3]]);
+    if (f) f.place([where[0] - Math.sin(where[3]) * 0.9, 0, where[2] - Math.cos(where[3]) * 0.9, where[3]]);
     await c.hotspots.trigger(id);
   }
 
@@ -401,16 +430,15 @@
         steps: [{ do: (c) => { const j = actor(c, 'jordan'); if (j) j.face(c.state.active); } }, { wait: 0.3 },
           { shot: 'MID', on: 'jordan' }, { act: [['jordan', 'wave', { dur: 1.6 }]] }, { wait: 1.0 }, me("Who's that?")] },
       { id: 'wall', at: [-2.0, 0, -6.2], r: 1.9, verb: 'Look', once: true, flag: 'diff_wall',
-        steps: [{ do: (c) => { const a = actor(c, c.state.active); if (a) a.face(PI, 0); } },
-          { do: (c) => c.cam.shot(Object.assign({ from: c.state.active }, WALL_PUSH)) }, { wait: 3.6 }, me('…Oh no.'), { wait: 0.4 }] },
+        steps: [{ do: (c) => eyeLens(c, 'display_wall', WALL_PUSH) }, { wait: 3.6 }, me('…Oh no.'), { wait: 0.4 }] },
       { id: 'wall_near', at: 'display_wall', r: 1.5, verb: 'Look', once: true, flag: 'diff_wall',
-        steps: [{ shot: 'INSERT', at: 'tethers' }, { wait: 1.6 }, me('…Oh no.')] },
+        steps: [look('tethers', 50), { wait: 1.6 }, me('…Oh no.')] },
       { id: 'poster', at: 'missing_poster', r: 1.0, verb: 'Look', once: true, flag: 'diff_poster',
         steps: [look('missing_poster', 34, ['missing', {}]), { wait: 3.2 }, { do: (c) => c.ui.card(null) }] },
       { id: 'calendar', at: 'calendar', r: 0.9, verb: 'Look', once: true, flag: 'diff_calendar',
-        steps: [look('calendar', 30), { wait: 1.4 }, say('chase', "…That's not right.")] },
+        steps: [look('calendar', 44), { wait: 1.4 }, say('chase', "…That's not right.")] },
       { id: 'sign', at: [-2.0, 0, -0.95], r: 1.3, verb: 'Look', once: true, flag: 'diff_sign',
-        steps: [{ shot: 'CAM', pos: [-2.6, 1.55, -0.7], look: [-4.9, 0.55, 1.4], fov: 42 }, { wait: 1.4 }, me("…Where's the sign?")] },
+        steps: [look('aframe', 44), { wait: 1.4 }, me("…Where's the sign?")] },   // (the spot outside where the A-frame stood)
       // --- the rest of the store
       { id: 'backroom_door', at: [6.4, 0, -23.3], r: 0.8, verb: 'Open', door: { to: [6.1, 0, -25.4, PI], kind: 'jarvis' }, do: doorOpened },
       { id: 'backroom_door_back', at: [6.4, 0, -24.45], r: 0.6, verb: 'Open', door: { to: [6.4, 0, -22.4, 0], kind: 'jarvis' } },
@@ -423,7 +451,7 @@
       ['do', (c) => { glowWatch(c); c.music('reddy', { fade: 3 }); }],
       ['roam', {
         until: (s) => found(s) >= 2,
-        async auto(c) { await visit(c, [1.2, 0, -3.6, 2.6], 'halloween'); await visit(c, [-2.0, 0, -5.4, PI], 'wall'); },
+        async auto(c) { await visit(c, [1.9, 0, -4.1, -0.4], 'halloween'); await visit(c, [-2.0, 0, -5.4, PI], 'wall'); },
       }],
       ['control', 'chase'], ['follow', 'luka'],
       ['roam', {
@@ -481,11 +509,12 @@
   // Luke's office door: the boys stand in the staff area, Luke comes out at them.
   const LUKE_OUT = [9.85, 0, -11.85, -0.75], LUKA_AT = [7.95, 0, -10.15, 2.3], CHASE_AT = [7.3, 0, -10.55, 2.3], LUKA_FRONT = [8.1, 0, -10.9, 2.2];
   CUTSCENES['3.6_luke'] = [
+    { music: null, fade: 1.5 },
     { place: 'luka', at: LUKA_AT }, { place: 'chase', at: CHASE_AT },
     { act: [['luka', 'idle'], ['chase', 'idle']] },
     { place: 'luke', at: 'office_door_in' }, { do: (c) => { const l = actor(c, 'luke'); if (l) { l.visible = true; l.setExpr('worried'); } } },
     // [WIDE · the office door] Luke comes out and stops dead.
-    { shot: 'CAM', pos: [9.8, 1.6, -9.3], look: [9.2, 1.2, -12.3], fov: 52 },
+    { shot: 'CAM', pos: [10.3, 1.65, -8.9], look: [8.5, 1.2, -12.0], fov: 52 },
     { prop: 'office_door', fn: (o) => { o.userData.open = true; } },
     { wait: 0.4 },
     { move: 'luke', to: LUKE_OUT, speed: 2.2 },
@@ -526,8 +555,13 @@
     say('luke', "You don't even know what you did."),
     say('luka', "Doesn't matter. I'm the 2IC. It's on me."),
     // [PUSH IN · slow, on Luke] He looks at Luka properly for the first time.
-    { face: 'luke', to: 'luka' }, { expr: [['luke', 'neutral']] },
-    { shot: 'CLOSE', on: 'luke', move: 'push', amount: 0.72, dur: 6 },
+    { face: 'luke', to: 'luka', dur: 0 }, { expr: [['luke', 'neutral']] },
+    { do: (c) => {
+      const a = actor(c, 'luke'), l = actor(c, 'luka');
+      if (!a || !l) return;
+      a.eyePos(V1); V2.set(l.pos.x - V1.x, 0, l.pos.z - V1.z).normalize();
+      c.cam.shot({ shot: 'CAM', pos: [V1.x + V2.x * 1.25 + V2.z * 0.12, V1.y - 0.03, V1.z + V2.z * 1.25 - V2.x * 0.12], look: [V1.x, V1.y - 0.05, V1.z], fov: 40, move: 'push', amount: 0.72, dur: 6 });
+    } },
     { wait: 1.8 },
     slow('luke', "…We'll talk about your position."),
     // He goes back into the office.
@@ -631,7 +665,7 @@
     playable: [], swap: false, hud: null, music: null,   // the store hum; the store's hold music for the stare
     spawn: { luka: COUNTER_LUKA, chase: COUNTER_CHASE, jordan: [0.55, 0, -1.0, 0.15], luke: 'office_door_in', rue58: [-2.1, 0, 3.3, PI] },
     steps: [['cutscene', '3.7']],
-    grants: { flags: { rue_arrived: true, tape_given: true }, items: [] },
+    grants: { flags: { rue_arrived: true, tape_given: true } },
   };
 
   CUTSCENES['3.7'] = [
@@ -716,7 +750,7 @@
     { place: 'luka', at: BENCH_LUKA }, { place: 'chase', at: BENCH_CHASE }, { place: 'rue58', at: 'kettle' },
     { hold: 'rue58', prop: 'kettle' },
     { do: (c) => playBare(c, 'rue58', 'pour', {}, 'mug') },
-    { shot: 'CAM', pos: [10.25, 1.62, -27.55], look: [9.6, 1.3, -28.55], fov: 44 },
+    { shot: 'CAM', pos: [10.2, 1.7, -29.6], look: [9.5, 1.35, -28.5], fov: 44 },
     { wait: 0.8 },
     { do: kettleYes },
     { hold: 'rue58', prop: null },
@@ -755,7 +789,7 @@
     say('chase', "…That's us."),
     // [CLOSE · Chase] He picks up the PUDDING cassette.
     { do: (c) => { drop(c, 'chase'); hand(c, 'chase', 'pudding'); faceOut(c, 'pudding'); return playBare(c, 'chase', 'reading', {}, 'textbook'); } },
-    { shot: 'CLOSE', on: 'chase', angle: 'high', dist: 1.1 },
+    { do: (c) => faceAndHands(c, 'chase', 0.95) },
     { wait: 1.0 },
     say('chase', "…That's my writing."),
     // [TWO-SHOT · locked] They look at the cassette, then at each other, then at Rue.
@@ -773,6 +807,7 @@
     slow('rue58', "You won't remember. You told me you wouldn't. You told me to give you this."),
     // He puts the dictaphone down between them.
     { move: 'rue58', to: [4.55, 0, -28.3, PI], speed: 0.9 },
+    { shot: 'CAM', pos: [6.1, 1.6, -27.1], look: [4.6, 1.05, -28.9], fov: 50 },
     { act: [['rue58', 'give', { dur: 1.4 }]] },
     { wait: 0.6 },
     { prop: 'dictaphone', visible: true, pos: DICTA_BENCH, rotY: 0.3 },
@@ -960,7 +995,7 @@
     say('luka', 'So nobody can fix it.'),
     say('rue58', 'Nobody can fix JARVIS.'),
     // [PUSH IN · slow, on Rue]
-    { shot: 'MID', on: 'rue58', move: 'push', amount: 0.55, dur: 9 },
+    { shot: 'CLOSE', on: 'rue58', dist: 1.7, move: 'push', amount: 0.6, dur: 9 },
     { expr: [['chase', 'stunned']] },
     say('chase', 'You knew. The whole time. You knew we\'d rip the phones off the wall. You could\'ve stopped us.'),   // (it dawns on him)
     slow('rue58', 'And then who would\'ve found me under that bell tower?'),
@@ -982,7 +1017,8 @@
     slow('rue58', 'I heard you, you know. That night on my floor. "Nobody else could do it, so it had to be me." ^ I\'ve hired a lot of people since then, Luka. It\'s the only thing I look for.'),
     // [CLOSE · Luka] He looks at the lanyard in his hands. He doesn't twist it.
     { do: (c) => playBare(c, 'luka', 'reading', { still: true }, 'textbook') },
-    { shot: 'INSERT', at: 'luka', dist: 0.95 },
+    { wait: 0.1 },
+    { do: (c) => faceAndHands(c, 'luka', 0.85, 44) },
     { wait: 2.6 },
     // [WIDE · Luke framed in the backroom doorway] He's heard just enough to be very confused.
     { place: 'luke', at: 'doorway' }, { do: (c) => { const a = actor(c, 'luke'); if (a) { a.visible = true; a.setExpr('worried'); } } },
@@ -1002,9 +1038,10 @@
     { act: [['luka', 'idle']] },
     { face: 'luka', to: 'rue58' },
     // [CLOSE · Rue holding up the PUDDING cassette]
-    { face: 'rue58', to: 'chase' },
+    { face: 'rue58', to: 0.35 },
     { do: (c) => { hand(c, 'rue58', 'pudding'); faceOut(c, 'pudding'); return playBare(c, 'rue58', 'reading', {}, 'textbook'); } },
-    { shot: 'CLOSE', on: 'rue58', dist: 1.15 },
+    { wait: 0.1 },
+    { do: (c) => faceAndHands(c, 'rue58', 1.0, 42) },
     { wait: 0.5 },
     slow('rue58', 'I played this every day for a year. After that, every time I had to decide something that mattered. ^ It\'s got a kettle in it.'),   // (to Chase)
     // [CLOSE · Chase] He opens his mouth. Nothing comes out.
@@ -1031,6 +1068,8 @@
     slow('rue58', "This has rung twice in thirty-nine years. Once with the worst news of my life. Once with the best. ^ I'd like it to ring a bit more. If that's all right."),
     // [TWO-SHOT · Luka and Chase look at each other] A short, easy hold. Nobody needs to say anything.
     { do: (c) => { drop(c, 'rue58'); const a = actor(c, 'rue58'); if (a) a.play('idle'); } },
+    { act: [['chase', 'stand', { h: 0.1 }]] },
+    { wait: 1.0 },
     { place: 'rue58', at: RUE_END }, { place: 'luka', at: LUKA_END }, { place: 'chase', at: CHASE_END },
     { act: [['chase', 'idle']] },
     { expr: [['luka', 'neutral'], ['chase', 'neutral']] },

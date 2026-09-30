@@ -24,7 +24,7 @@
   // The flow gives every set its own ambience on load; these shots want something else (rain inside, silence in the sun).
   const amb = (rain, loops = []) => ({ do: (c) => { if (c.AUDIO && c.AUDIO.ambience) c.AUDIO.ambience({ rain, loops }); } });
   const face = (id, fn) => ({ do: (c) => { const a = actor(c, id); if (a) fn(a.rig.face, a); } });
-  // 'reading' holds both hands up in front of the chest; it shows the rig's textbook, so shrink that away meanwhile
+  // 'reading' holds both hands up in front of the chest; it shows the rig's textbook, so that shrinks away for the scene
   function noBook(a, on) { const b = a && a.rig.attach.textbook; if (b) b.scale.setScalar(on ? 1e-4 : 1); }
   // sit, then an upper-body anim on top (the rig only keeps a seated lower body once `seated` is set)
   function seat(a, anim, h = 0.46) { if (!a) return; a.play('sit', { h }); a.rig.seated = true; if (anim) a.play(anim, { h }); }
@@ -60,7 +60,7 @@
       const u = Math.min(1, k / 0.45), v = Math.max(0, (k - 0.45) / 0.55);
       m.position.set(0, k < 0.45 ? y0 + (0.42 - y0) * u : 0.42 * (1 - v), k < 0.45 ? z0 + (0.05 - z0) * u : 0.05 * (1 - v));
       m.rotation.x = 0.5 * (1 - Math.min(1, k * 1.6));
-      if (k >= 1) { LY.rig.attach.lanyard = m; noBook(a, false); }
+      if (k >= 1) LY.rig.attach.lanyard = m;
     });
   }
 
@@ -97,7 +97,6 @@
   function laugh(c) {
     const a = actor(c, 'chase'); if (!a) return;
     a.play('laugh'); a.setExpr('laugh');
-    c.wait(0.3).then(() => noBook(a, false));
   }
   // He taps the rhythm of the restart chime (three rising notes, 0.2 s apart) on the counter: with it, then on his own.
   async function tapChime(c) {
@@ -120,6 +119,9 @@
 
   // the match cuts: the same CLOSE, low, on whoever tilts his face up
   const SAME = (id) => ({ shot: 'CLOSE', on: id, angle: 'low' });
+  // Rue at his desk: the same lens by hand (0.8 m out and 0.37 m under his eyes; a computed close swings off the desk)
+  const SAME_DESK = { shot: 'CAM', pos: [0.1, 1.0, -1.5], look: [0, 1.33, -2.32], fov: 40 };
+  const BRICK_ECU = { shot: 'CAM', pos: [0.72, 0.96, -1.08], look: [0.78, 0.87, -1.56], fov: 30 };   // the Prologue's ECU
   function squareUp(c) {
     if (c.AUDIO && c.AUDIO.ambience) c.AUDIO.ambience({ rain: false, loops: [] });   // the first sun in three weeks
     const b = c.world.prop('bell'); if (b) b.userData.ring = true;
@@ -138,13 +140,17 @@
     r.rig.face.eyes('closed');
   }
   // the brick phone rings, a third time: LCD lit, the handset buzzing, the trill every 1.6 s
-  async function ringThird(c) {
+  function ringThird(c) {
     const ph = c.world.prop('brick_phone');
     if (ph) ph.userData.ring = true;
-    for (let i = 0; i < 2 && !c.flow.skipping; i++) { c.sfx('brick_ring', { vol: 0.8 }); await c.wait(i ? 0.9 : 1.6); }
-    const r = actor(c, 'rue58');
-    if (r) { r.rig.face.eyes('open'); r.rig.face.mouth('smile'); }
+    let n = 0;
+    const f = (dt) => {   // the trill every 1.6 s until he answers
+      if (!ph || !ph.userData.ring || flow.sceneId !== 'E' || c.flow.skipping) { removeUpdate(f); return; }
+      if ((n -= dt) <= 0) { n = 1.6; sfx('brick_ring', { vol: 0.8 }); }
+    };
+    addUpdate(f);
   }
+  function smileUp(c) { const r = actor(c, 'rue58'); if (r) { r.rig.face.eyes('open'); r.rig.face.mouth('smile'); } }
   async function answer(c) {
     const ph = c.world.prop('brick_phone'), r = actor(c, 'rue58');
     if (ph) { ph.userData.ring = false; ph.visible = false; }   // up off the desk, into his hand (the rig's own brick)
@@ -170,7 +176,8 @@
     cur.style.transform = `translate(${innerWidth * 0.68}px,${innerHeight * 0.74}px)`;
     document.body.append(cur);
     await c.wait(0.4);                                                   // (the pop-up has landed)
-    const r0 = yes ? yes.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 2, width: 0, height: 0 };
+    const r0 = yes && yes.getBoundingClientRect();
+    if (!r0 || !r0.width) { cur.remove(); return; }                    // (already answered: YES pressed, or autoplay)
     const bx = r0.left + r0.width * 0.55, by = r0.top + r0.height * 0.55;
     cur.style.transform = `translate(${bx}px,${by}px)`;              // over YES…
     await c.wait(1.3);
@@ -186,6 +193,13 @@
   }
   // TITLE: RUE — the big card fades in over the white; the white turns black behind it, so it fades out to black.
   const blackUnder = { do: async (c) => { await c.wait(1.2); c.ui.fade(1, 0, '#000'); } };
+  // (the act card, with its name at the title screen's size: this is the title drop)
+  const bigTitle = { do: async (c) => {
+    const b = document.querySelector('#acard b');
+    if (b) b.style.fontSize = 'min(24vh, 20vw)';
+    await c.ui.actCard('RUE');
+    if (b) b.style.fontSize = '';
+  } };
 
   // A courier's parcel for Chase, opened: the lanyard with his name on the badge, and a handwritten note.
   CARDS.parcel = (cx, w, h) => {
@@ -205,7 +219,7 @@
     cx.fillStyle = 'rgba(255,255,255,.8)'; cx.fillRect(bw / 2 - 150, -bh / 2 - fl + 14, 120, 40);   // courier label
     cx.fillStyle = '#222'; for (let i = 0; i < 9; i++) cx.fillRect(bw / 2 - 142 + i * 12, -bh / 2 - fl + 22, i % 3 ? 4 : 7, 24);
     cx.restore();
-    cx.save(); cx.translate(w * 0.16, h * 0.13); cx.rotate(-0.09); cx.scale(0.66, 0.66);
+    cx.save(); cx.translate(w * 0.09, h * 0.13); cx.rotate(-0.09); cx.scale(0.66, 0.66);
     CARDS.badge(cx, 640, 520, { name: 'CHASE' });                      // the lanyard and the badge, new
     cx.restore();
     cx.save(); cx.translate(w * 0.69, h * 0.6); cx.rotate(0.07);         // the note
@@ -276,7 +290,7 @@
     { expr: [['chase', 'worried']] },                                  // (frowning)
     say('chase', 'Yeah. Dunno why I said that.'),
     // Margaret comes in with her grandson.
-    { place: 'margaret', at: [0.6, 0, 7.6, -2.7] }, { place: 'grandson', at: [1.3, 0, 7.9, -2.7] },
+    { place: 'margaret', at: [-0.7, 0, 5.4, -2.7] }, { place: 'grandson', at: [0.0, 0, 5.7, -2.7] },
     DOORS,
     { move: 'margaret', to: [-2.3, 0, 1.4, PI], speed: 1.15, nowait: true },
     { move: 'grandson', to: [-1.55, 0, 1.6, PI], speed: 1.15 },
@@ -287,7 +301,7 @@
     // across the shop floor, by the window
     { place: 'chase', at: [6.2, 0, -1.9, -2.2] }, { place: 'margaret', at: [4.75, 0, -2.95, 0.95] }, { place: 'grandson', at: [4.1, 0, -2.2, 1.3] },
     { expr: [['chase', 'neutral']] },
-    { shot: 'TWO', on: ['chase', 'margaret'] },
+    { shot: 'CAM', pos: [7.2, 1.45, -4.9], look: [5.48, 1.2, -2.43], fov: 40 },   // two-shot in profile, the wet glass behind
     say('margaret', "Chase! You're back. They said you'd gone to Ireland."),
     say('chase', 'Did they?'),
     say('margaret', "You've a bit of an accent, love."),
@@ -363,11 +377,17 @@
     // He smiles the same smile and answers.
     { set: 'office', env: 'day', spawn: { rue58: 'rue_desk' } },
     { do: officeUp },
-    SAME('rue58'),
+    SAME_DESK,
     { wait: 0.3 },
     { do: (c) => c.world.preload('reddy') },
     { wait: 0.5 },
     { do: ringThird },
+    { wait: 0.7 },
+    BRICK_ECU,                                                         // (the phone on the desk, as in the Prologue and 3.5)
+    { wait: 1.3 },
+    SAME_DESK,
+    { do: smileUp },
+    { wait: 0.7 },
     { do: answer },
     slow('rue58', 'Yes?'),
     // [JARVIS-CAM] The store monitor: "JARVIS has encountered an error. Would you like to restart? [YES] [NO]".
@@ -381,7 +401,7 @@
     amb(false),
     { wait: 0.9 },
     // TITLE: RUE
-    { par: [{ actCard: 'RUE' }, blackUnder] },
+    { par: [bigTitle, blackUnder] },
   ];
 
   // =================================================================== CREDITS
@@ -408,22 +428,22 @@
         pose(n, t, p);
         if (n !== 'point' || flow.sceneId !== 'PC') return;
         const k = Math.min(1, t / 0.35);
-        r.parts.torso.rotation.y -= 0.9 * k; r.parts.neck.rotation.y += 0.3 * k; r.parts.head.rotation.y += 0.55 * k;
+        r.parts.torso.rotation.y -= 1.15 * k; r.parts.neck.rotation.y += 0.35 * k; r.parts.head.rotation.y += 0.8 * k;
       };
     }
     a.play('point', { dur: 2.4, loop: false });
   }
-  // the back of the targets sheet, as the player left it in 1.6 (+ the door, by dialogue)
-  const SPEC = { title: 'JARVIS — bugs', items: [], skull: true, frame: true };
+  // the back of the targets sheet, as the player ticked it in 1.6 (+ the door, by dialogue)
+  const SPEC = { title: 'JARVIS — bugs', items: [], skull: true };   // the same sheet as 1.6's card
   function fillSpec(c) {
-    SPEC.items = (state.bugs || []).map((id) => (BUGS.find((b) => b.id === id) || {}).text).filter(Boolean).concat(DOOR_BUG);
+    SPEC.items = BUGS.filter((b) => (state.bugs || []).includes(b.id)).map((b) => b.text).concat(DOOR_BUG);   // (the frame's order)
     const f = c.world.prop('spec_frame'); if (f && f.userData.repaint) f.userData.repaint(state.bugs);
   }
 
   SCENES.PC = {
     title: 'The Original Spec', set: 'jarvis_hq', env: 'rain', time: 'Dublin, 2026',
     playable: [], swap: false, hud: null, music: null,
-    spawn: { declan58: 'declan_desk', young_dev: 'young_dev' },
+    spawn: { declan58: 'declan_desk', young_dev: [O(2.0), 0, -1.9, 0.58] },   // behind Declan's left shoulder, off the track
     steps: [['cutscene', 'PC']],
     grants: {},
   };

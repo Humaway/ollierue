@@ -82,6 +82,7 @@ SETS.square = (() => {
     // extras
     machine_desk: { at: [-20.85, 1.3, 5.6], from: [-21.8, 1.9, 5.2], fov: 35 },
     machine_cupboard: { at: [-24.75, 1.28, 2.7], from: [-23.9, 1.7, 3.8], fov: 40 },
+    machine_back: { at: [-24.75, 1.33, 2.82], from: [-24.75, 1.75, 1.85], fov: 40 },   // JARVIS-CAM: the lens behind the machine's screen (3.2)
     lodge_window_pov: { at: [-2, 3.2, 2.7], from: [-21.55, 2.05, 5.65], fov: 45 },
     lodge_hatch: { at: [-23.55, 1.8, 2.2], from: [-22.6, 1.7, 0.2], fov: 45 },
     steps: { at: [0, 0.8, 4.1], from: [-3, 1.7, 13], fov: 30 },

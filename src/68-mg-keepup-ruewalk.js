@@ -133,7 +133,7 @@ MINIGAMES.rue_walk = (() => {
   const ROUTE = {
     1: [[-9, 0.9], [-7.2, 4.8], [-3.8, 7.6], [1.2, 8.8], [5.4, 10.6], [7.27, 13.7]],
     2: [[7.27, 13.6], [0.5, 4.9], [0.35, 2.6]],
-    3: [[0, -13.4], [0, -4.6], [0, 0], [0.2, 4.4], [3.2, 8.6], [7.27, 13.7]],
+    3: [[-11.5, 1.1], [0, 0], [0.2, 4.4], [3.2, 8.6], [7.27, 13.7]],   // through walk 1's start, then straight under the Campanile
   };
   const AUTO1 = [[-5.2, 0.6], [5.4, 10.6], [7.27, 13.7]];   // autoplay walk 1 steers at the Campanile once, so the veer runs
   const PEOPLE = [
