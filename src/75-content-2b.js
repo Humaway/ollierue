@@ -39,6 +39,21 @@
     L.forEach((t, i) => { cx.fillStyle = i === L.length - 1 ? '#b02020' : '#1a2a5a'; cx.font = `bold ${i === 1 ? 44 : 64}px "Trebuchet MS", sans-serif`; cx.fillText(t, 0, (i - (L.length - 1) / 2) * h * 0.22, w * 0.76); });
   };
   CARDS.lab_sign.size = [800, 460];
+  // The brass key from the lost property drawer, on a paper tag: "1979".
+  CARDS.keytag = (cx, w, h, d) => {
+    cx.translate(w / 2, h / 2); cx.rotate(-0.12);
+    cx.shadowColor = 'rgba(0,0,0,.45)'; cx.shadowBlur = 24; cx.shadowOffsetY = 10;
+    cx.strokeStyle = '#8a8070'; cx.lineWidth = 4; cx.beginPath(); cx.moveTo(-w * 0.02, -h * 0.02); cx.lineTo(-w * 0.14, -h * 0.02); cx.stroke();   // the string
+    cx.fillStyle = '#c9a23a'; cx.beginPath(); cx.arc(-w * 0.2, 0, h * 0.14, 0, 7); cx.fill();
+    cx.fillRect(-w * 0.2, -h * 0.035, w * 0.36, h * 0.07); cx.fillRect(w * 0.08, h * 0.03, w * 0.03, h * 0.08); cx.fillRect(w * 0.12, h * 0.03, w * 0.025, h * 0.05);
+    cx.shadowColor = 'transparent'; cx.fillStyle = '#6a5010'; cx.beginPath(); cx.arc(-w * 0.2, 0, h * 0.05, 0, 7); cx.fill();
+    cx.translate(-w * 0.02, 0); cx.rotate(0.3);   // the tag
+    cx.shadowColor = 'rgba(0,0,0,.35)'; cx.shadowBlur = 18; cx.fillStyle = '#efe4c4';
+    cx.beginPath(); cx.moveTo(0, -h * 0.12); cx.lineTo(w * 0.3, -h * 0.12); cx.lineTo(w * 0.3, h * 0.12); cx.lineTo(0, h * 0.12); cx.lineTo(-w * 0.05, 0); cx.closePath(); cx.fill();
+    cx.shadowColor = 'transparent'; cx.fillStyle = '#b8a880'; cx.beginPath(); cx.arc(0, 0, h * 0.02, 0, 7); cx.fill();
+    cx.fillStyle = '#1d2f8f'; cx.font = `${h * 0.14}px "Comic Sans MS", "Marker Felt", cursive`; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(d.text || '1979', w * 0.165, h * 0.01);
+  };
+  CARDS.keytag.size = [800, 500];
 
   // item icons: tiny flat drawings
   const icon = (fn) => (c, w, h) => { c.save(); c.translate(w / 2, h / 2); c.scale(w / 100, h / 100); fn(c); c.restore(); };
@@ -61,14 +76,13 @@
       examine: card('list', () => ({ title: 'SAMPLES', items: state.samples.length ? state.samples.map((k) => (SAMPLES[k] || {}).label || k) : ['—'], paper: 'notebook' })),
     },
     transformer: {
-      name: 'Transformer', desc: 'Declan\'s transformer.',
+      name: 'Transformer', desc: 'From a train set.',
       icon: icon((c) => { c.fillStyle = '#5a1a14'; c.fillRect(-34, -20, 68, 44); c.fillStyle = '#111'; c.beginPath(); c.arc(-6, -20, 14, PI, 0); c.fill(); c.fillStyle = '#e8e0c8'; c.fillRect(-26, 6, 52, 8); }),
-      examine: card('label', { text: '12V TRANSFORMER — MIND IT' }),
     },
     key_1979: {
       name: 'Key (1979)', desc: 'A small key on a tag.',
       icon: icon((c) => { c.strokeStyle = '#c9a23a'; c.lineWidth = 8; c.beginPath(); c.arc(-20, 0, 14, 0, 7); c.stroke(); c.fillStyle = '#c9a23a'; c.fillRect(-6, -4, 44, 8); c.fillRect(26, 4, 6, 12); c.fillRect(34, 4, 6, 8); }),
-      examine: card('label', { text: '1979' }),
+      examine: card('keytag', { text: '1979' }),
     },
     cable: {
       name: 'USB-C cable (stripped)', desc: 'Chase\'s only cable.',
@@ -105,6 +119,8 @@
     c.world.spawn('declan', 'declan_bench').play('sit', { h: 0.48 });
     if (f.resting) { const l = c.world.spawn('luka', 'bike_rig'); l.play('pedal', { speed: 0.35 }); }
   }
+  const REC = (on) => ({ do: (c) => { const a = actor(c, 'chase'); if (a && a.rig.attach.recorder) a.rig.attach.recorder.visible = on; } });   // Chase's hands
+  const PHONES = (on) => ({ do: (c) => { const a = actor(c, 'chase'); if (a && a.rig.attach.headphones) a.rig.attach.headphones.visible = on; } });
   function butteryDress(c) { if (c.world.setId === 'buttery') c.world.spawn('bernie', 'counter_bernie'); }
 
   // =================================================================== 2.4 — "The Answer's No"
@@ -132,12 +148,13 @@
       ['cutscene', '2.4_no'],
       ['control', 'rue19'],
       ['minigame', 'rue_walk', { walk: 1 }],
-      ['steps', [{ sfx: 'creak' }, { fade: 'out', dur: 0.8 }]],   // into the Buttery
+      ['steps', [{ sfx: 'creak' }, { fade: 'out', dur: 0.8 }, { prop: 'umbrella_crowd', visible: true }]],   // into the Buttery
     ],
     grants: { flags: { met_rue: true }, battery: 1, bars: 0 },
   };
 
   CUTSCENES['2.4_no'] = [
+    { prop: 'umbrella_crowd', visible: false },   // the square empties: one student will walk between them (back at the scene's end)
     { place: 'rue19', at: [-11.4, 0, 0.85, -H] }, { place: 'chase', at: [-13.9, 0, 0.3, H] }, { place: 'luka', at: [-13.9, 0, 1.45, H] },
     { act: [['chase', 'idle'], ['luka', 'idle'], ['rue19', 'idle']] },
     // [CLOSE · Chase, breathless]
@@ -162,10 +179,8 @@
     { shot: 'CAM', pos: [-13.0, 1.5, 0.95], look: [-6.5, 1.8, 0.5], fov: 40 },
     { wait: 0.3 },
     { move: 'rue19', to: [-9.0, 0, 0.9] },
-    { do: (c) => glanceAt(c, 'rue19', 'chase', 2.2) },
-    say('rue19', 'See you, Australia.'),
-    { do: (c) => glanceAt(c, 'rue19', 'luka', 2.2) },   // (to Luka)
-    say('rue19', 'And Other Australia.'),
+    { par: [say('rue19', 'See you, Australia. And Other Australia.'),
+      { do: async (c) => { glanceAt(c, 'rue19', 'chase', 1.2); await c.wait(0.5); if (!c.flow.skipping) glanceAt(c, 'rue19', 'luka', 2.4); } }] },   // (to Luka)
     // [TWO-SHOT · the boys, left standing in the rain]
     { shot: 'TWO', on: ['chase', 'luka'] },
     { expr: [['luka', 'stunned']] },
@@ -208,6 +223,8 @@
     grants: { flags: { showed_list: true, cupboard_open: true, no_usbc: true }, items: ['bug_list'], battery: 1, bars: 0 },
   };
 
+  // [TWO-SHOT · locked] the boys side by side across the table facing camera, Rue's profile at the edge of frame (used twice)
+  const TWOSHOT = { shot: 'CAM', pos: [7.8, 1.42, -4.38], look: [6.35, 1.08, -2.8], fov: 50 };
   CUTSCENES['2.5_list'] = [
     { place: 'luka', at: 'rue_table_a' }, { place: 'chase', at: 'rue_table_b' },
     { act: [['luka', 'sit', { h: 0.46 }], ['chase', 'sit', { h: 0.46 }]] },
@@ -251,7 +268,7 @@
     say('luka', 'So who made JARVIS?'),
     say('chase', '…'),
     // [TWO-SHOT · locked, the boys side by side across the table, facing camera] A stare, 2 seconds. Rue eats a chip.
-    { shot: 'INSERT', at: 'rue_twoshot' },
+    TWOSHOT,
     { expr: [['luka', 'stunned'], ['chase', 'stunned']] },
     { par: [{ stare: 2 }, { do: async (c) => { glanceAt(c, 'rue19', 'luka', 0.7); await c.wait(0.75); glanceAt(c, 'rue19', 'chase', 0.7); await c.wait(0.7); actor(c, 'rue19').play('chew', { dur: 1 }); } }] },
     // [WIDE · exterior] The Buttery from outside, in the rain. A bus goes past. One second.
@@ -261,28 +278,30 @@
     { wait: 1 },
     // [TWO-SHOT · the same frame as before] One second. They haven't moved. Rue now has a fresh cup of tea.
     { prop: 'fresh_tea', visible: true },
-    { shot: 'INSERT', at: 'rue_twoshot' },
+    TWOSHOT,
     { wait: 1 },
     { expr: [['luka', 'neutral'], ['chase', 'neutral']] },
     say('luka', "…it's not genius."),
-    // [MID] Rue stands and tucks the list into Chase's pocket.
-    { shot: 'MID', on: 'rue19', dist: 2.4 },
+    // [MID] Rue stands and tucks the list into Chase's pocket. (Framed from over the table so Luka's head stays out of it,
+    // then from Rue's corner as he comes round to Chase.)
+    { shot: 'CLOSE', on: 'rue19', dist: 1.3 },
     { act: [['rue19', 'stand']] },
     { wait: 0.9 },
-    { move: 'rue19', to: [7.45, 0, -3.5] },
-    { move: 'rue19', to: [7.3, 0, -2.3] },
+    { move: 'rue19', to: [7.45, 0, -3.55] },
+    { shot: 'CAM', pos: [7.7, 1.55, -4.45], look: [6.85, 1.3, -2.45], fov: 50 },
+    { move: 'rue19', to: [7.35, 0, -2.3] },
     { face: 'rue19', to: 'chase' },
     { act: [['rue19', 'give']] },
-    { wait: 0.6 },
+    { wait: 0.7 },
     say('rue19', 'Well. Best of luck with your JARVIS.'),
     { move: 'rue19', to: [7.5, 0, -0.6], nowait: true },
   ];
 
   CUTSCENES['2.5_stuck'] = [
-    { place: 'chase', at: [-23.0, 0.46, 3.5, -2.3] },
-    { move: 'luka', to: 'lodge_cupboard' },
-    // [CLOSE · the cupboard door opening] Light falls on the machine.
-    { shot: 'INSERT', at: 'cupboard' },
+    { place: 'chase', at: [-23.0, 0.46, 4.1, -2.3] },
+    { move: 'luka', to: [-23.9, 0.46, 3.35] }, { face: 'luka', to: 'cupboard' },
+    // [CLOSE · the cupboard door opening] Light falls on the machine. (Luka at its side, so the lens sees in.)
+    { shot: 'CAM', pos: [-25.5, 1.6, 4.7], look: [-24.6, 1.25, 2.65], fov: 40 },
     { sfx: 'creak' },
     { do: (c) => {   // the door swings, and the lodge lamp's light falls in on the machine
       const d = c.world.prop('cupboard_door'), s = c.world.torch;
@@ -294,7 +313,7 @@
     { wait: 1.5 },
     // [INSERT] BATTERY 1%.
     { prop: 'machine_wrap', visible: false },
-    { shot: 'INSERT', at: 'machine_cupboard', card: ['battery', { pct: 1, bars: 0 }] },
+    { shot: 'CAM', pos: [-25.2, 1.55, 4.1], look: [-24.7, 1.25, 2.7], fov: 34, card: ['battery', { pct: 1, bars: 0 }] },
     { wait: 2 },
     // [ECU] Chase turns the iPhone over: a USB-C port.
     { do: (c) => { const s = c.world.torch; if (s) { s.intensity = 0; c.world.torchAuto = true; } } },
@@ -324,11 +343,13 @@
     say('chase', "We're stuck."),
     // [WIDE · locked, long lens from across Front Square] The two of them tiny on the lodge step under the huge arch.
     // Chase head in hands, Luka beside him twisting his lanyard; in the lit window Des puts the kettle on. Hold 3 s, fade.
+    // (The lens looks in past the Campanile's north side so the lit window shows too; the crowd is cleared for the hold.)
     { place: 'luka', at: 'lodge_step_luka' }, { place: 'chase', at: 'lodge_step_chase' },
     { act: [['luka', 'sit', { h: 0.23 }], ['chase', 'sit', { h: 0.23 }]] },
-    { place: 'des', at: 'lodge_window' },
+    { place: 'des', at: [-22.2, 0.46, 5.7, -1.4] },
     { do: (c) => { unsit(c, 'des'); actor(c, 'des').play('pour'); } },
-    { shot: 'INSERT', at: 'lodge_step_far' },
+    { prop: 'umbrella_crowd', visible: false },
+    { shot: 'CAM', pos: [18, 1.7, 12.5], look: [-21.1, 1.4, 2.6], fov: 12 },
     { wait: 0.15 },
     { act: [['luka', 'lanyard'], ['chase', 'head_hands']] },
     { wait: 0.75 },
@@ -337,6 +358,7 @@
     snap('glance_step'),
     { wait: 1.6 },
     { fade: 'out', dur: 1.2 },
+    { prop: 'umbrella_crowd', visible: true },
   ];
 
   // =================================================================== 2.6 — "Second-in-Cycling"
@@ -419,15 +441,16 @@
           then: [say('des', "That bike's been chained there since 1979. If the owner comes back, I'll tell him it went to science."), { flag: 'des_bike' }],
           else: [say('des', 'Tea?')] }] },
       { id: 'drawer', at: 'lost_property_drawer', r: 1.2, verb: 'Search', when: (s) => inSquare() && !!s.flags.des_bike && !s.flags.part_bike && !s.inventory.includes('key_1979'),
-        steps: [{ sfx: 'creak', vol: 0.5 }, { shot: 'INSERT', at: 'lost_property_drawer', card: ['label', { text: '1979' }] }, { wait: 1.4 }, { item: 'key_1979' }] },
+        steps: [{ sfx: 'creak', vol: 0.5 }, { shot: 'INSERT', at: 'lost_property_drawer', card: ['keytag', { text: '1979' }] }, { wait: 1.4 }, { item: 'key_1979' }] },
       { id: 'bike', at: 'bike', r: 1.7, verb: 'Unlock', once: true, flag: 'part_bike', when: (s) => inSquare() && s.inventory.includes('key_1979'),
         steps: [
           { item: 'key_1979', remove: true }, { sfx: 'clunk' }, { prop: 'bike_chain', visible: false },
-          { place: 'luka', at: [-18.1, 0, 9.0, PI - 0.5] }, { place: 'chase', at: [-17.2, 0, 8.6, PI - 0.5] },
-          { shot: 'CAM', pos: [-11.6, 1.5, 3.6], look: [-16.4, 0.8, 7.6], fov: 45 },
+          // off across the cobbles towards the lab, the Campanile ahead of them; the bike wobbles at Luka's side
+          { place: 'luka', at: [-17.3, 0, 9.3, H] }, { place: 'chase', at: [-17.2, 0, 8.4, H] },
           { do: (c) => wheel(c, true) },
-          { move: 'chase', to: [-13.4, 0, 4.9], nowait: true },
-          { move: 'luka', to: [-14.2, 0, 5.6] },
+          { shot: 'CAM', pos: [-19.4, 1.8, 10.8], look: [-12.5, 0.9, 8.9], fov: 45 },
+          { move: 'chase', to: [-12.2, 0, 8.3], nowait: true, speed: 1.1 },
+          { move: 'luka', to: [-12.2, 0, 9.1], speed: 1.1 },
           { do: (c) => wheel(c, false) },
           { fade: 'out', dur: 0.5 },
           { prop: 'bike', visible: false },
@@ -472,18 +495,22 @@
   };
 
   CUTSCENES['2.6_des'] = [
+    { place: 'luka', at: [-22.55, 0.46, 4.2, 0.7] }, { place: 'chase', at: [-23.3, 0.46, 4.6, 0.9] },
     { act: [['des', 'sit', { h: 0.46 }]] },
-    { shot: 'TWO', on: ['des', 'luka'] },
+    { do: (c) => glanceAt(c, 'des', 'luka', 6) },
+    { shot: 'CLOSE', on: 'des' },
     say('des', "If it's wires you're after, try the computer lads in the basement. They never leave. I'm not sure they're allowed."),
     { fade: 'out', dur: 0.6 },
-    { set: 'lab', env: { hemi: [0xe6eaee, 0x80868c, 1.0], fog: [0x9aa0a6, 0.015] }, spawn: { luka: [0, 3.2, -1.3, 0], chase: [0.35, 3.2, -2.3, 0] } },
+    { set: 'lab', env: { hemi: [0xe6eaee, 0x80868c, 1.15], fog: [0x9aa0a6, 0.015] }, spawn: { luka: [0, 3.2, -1.3, 0], chase: [0.35, 3.2, -2.3, 0] } },
     { do: labDress },
-    // [TRACK · down the stairwell, ahead of them] Grey daylight to green screen-glow as they go down.
-    { shot: 'MID', on: ['luka', 'chase'], move: 'track', track: 'ahead', dist: 2.6, dur: 9 },
-    { fade: 'in', dur: 0.5 },
+    // [TRACK · down the stairwell, ahead of them] Grey daylight to green screen-glow as they go down. (The stairwell is
+    // 1.6 m wide: the lens backs down the steps in front of them on an explicit glide.)
+    { shot: 'CAM', pos: [0.35, 3.65, 2.0], look: [0, 4.25, -1.6], fov: 55, to: { pos: [0.35, 1.6, 6.75], look: [0, 1.5, 3.6], fov: 55 }, dur: 5.2 },
+    { fade: 'in', dur: 0.4 },
     { env: { hemi: [0x9ee0b0, 0x2e4a3a, 0.8], fog: [0x2e4a3a, 0.03] }, dur: 5 },
-    { move: 'chase', to: [0.35, 0, 5.6], nowait: true },
-    { move: 'luka', to: 'lab_door_out' },
+    { move: 'chase', to: [0.4, 0, 3.7], nowait: true, speed: 1.3 },
+    { move: 'luka', to: [0, 0, 4.5], speed: 1.3 },
+    { wait: 0.4 },
     { env: 'day', dur: 1 },
     // A door at the bottom: "COMPUTER LAB. AUTHORISED USERS ONLY. KNOCK."
     { shot: 'INSERT', at: 'door_sign', card: ['lab_sign', { text: 'COMPUTER LAB. AUTHORISED USERS ONLY. KNOCK.' }] },
@@ -501,19 +528,20 @@
     say('declan', 'Are yous from Engineering?'),
     say('chase', "We're from… Queensland."),
     say('declan', 'Is that a department?'),
-    // [CLOSE · Declan, lit by the iPhone's screen] He stares at it like it's the Book of Kells.
-    { place: 'chase', at: [4.75, 0, 11.35, 1.95] }, { place: 'luka', at: [4.3, 0, 10.3, 1.0] },
+    // [CLOSE · Declan, lit by the iPhone's screen] He stares at it like it's the Book of Kells. (Chase holds it out
+    // across Declan's bench; the lens looks back past him.)
+    { place: 'chase', at: [7.25, 0, 10.75, -1.75] }, { place: 'luka', at: [7.35, 0, 9.9, -1.4] },
     { face: 'declan', to: 'chase' },
     { act: [['chase', 'phone']] },
-    { do: (c) => { const s = c.world.torch, a = actor(c, 'declan'); if (!s || !a) return; c.world.torchAuto = false; s.position.set(5.05, 1.3, 11.28); a.headPos(s.target.position); s.color.set(0xcfe4ff); s.angle = 0.6; s.intensity = 3.5; } },
-    { shot: 'CLOSE', on: 'declan' },
+    { do: (c) => { const s = c.world.torch, a = actor(c, 'declan'); if (!s || !a) return; c.world.torchAuto = false; s.position.set(6.5, 1.15, 10.95); a.headPos(s.target.position); s.color.set(0xcfe4ff); s.angle = 0.6; s.intensity = 0.6; } },
+    { shot: 'CAM', pos: [7.6, 1.3, 11.75], look: [5.65, 1.22, 11.0], fov: 30 },
     say('declan', 'What does it do?'),
     say('chase', "Everything. Mostly people use it to look at other people's lunch."),
     say('declan', '…Why?'),
     say('chase', 'Honestly, mate? Nobody knows.'),
     // [CLOSE · Declan]
     { do: (c) => { const s = c.world.torch; if (s) { s.intensity = 0; c.world.torchAuto = true; } } },
-    { act: [['chase', 'idle']] }, { expr: [['declan', 'neutral']] },
+    { act: [['chase', 'idle']] }, { expr: [['declan', 'neutral']] }, { face: 'declan', to: [7.3, 10.4] },
     { shot: 'CLOSE', on: 'declan', locked: true },
     say('declan', 'I want to build a system for shops. Does all the boring bits, stock, receipts, forms, so the people behind the counter can do the people bits.', { speed: 'slow' }),
     // [TWO-SHOT · the boys exchange a look]
@@ -533,18 +561,20 @@
     say('chase', 'Samples.'),
     say('declan', 'Of what?'),
     say('chase', 'Everything.'),
-    { prop: 'recorder', visible: false }, { item: 'recorder' },
-    { wait: 1.6 },
-    { do: (c) => c.ui.toast('Hold YES near a sound to record it.') },
+    // [ORBIT · around Chase] The idea arrives. (He has the recorder now; clear floor all round him.)
+    { place: 'chase', at: [3.4, 0, 11.7, 1.1] }, { place: 'luka', at: [2.5, 0, 10.4, 0.9] },
+    { prop: 'recorder', visible: false }, REC(true),
+    { shot: 'MID', on: 'chase', move: 'orbit', from: -40, to: 80, dur: 10 },
+    { item: 'recorder' },
     { wait: 1.2 },
-    // [ORBIT · around Chase] The idea arrives.
-    { shot: 'MID', on: 'chase', move: 'orbit', from: -40, to: 80, dur: 7 },
+    { do: (c) => c.ui.toast('Hold YES near a sound to record it.') },
+    { wait: 1.4 },
     { expr: [['chase', 'determined']] },
     say('chase', 'Bicycle. Dynamo. Transformer. Cable. Done.'),
     say('luka', 'Where are we getting a bicycle?'),
     { expr: [['chase', 'worried']] },
     say('chase', '…I have not thought about that part.'),
-    { expr: [['chase', 'neutral']] },
+    { expr: [['chase', 'neutral']] }, REC(false),
     { flag: 'met_declan' },
   ];
 
@@ -574,26 +604,23 @@
   // [TIME-LAPSE · locked wide, under the basement's high window] Days pass; HUD 1% → 4%. Luka pedals; Chase records the
   // machines, the rain at the window, the kettle; later he's at a computer in headphones, typing in notes, and the demo
   // is rebuilt out of three bleeps and a hiss; at another bench Declan reads the Bug List Chase left lying there.
-  const REC = (on) => ({ do: (c) => { const a = actor(c, 'chase'); if (a && a.rig.attach.recorder) a.rig.attach.recorder.visible = on; } });
-  const PHONES = (on) => ({ do: (c) => { const a = actor(c, 'chase'); if (a && a.rig.attach.headphones) a.rig.attach.headphones.visible = on; } });
   CUTSCENES['2.6_timelapse'] = [
     { fade: 'out', dur: 0.5 },
     { music: null, fade: 1 },
     { do: (c) => { state.flags.resting = false; c.player.follower(null); } },
     { place: 'luka', at: 'bike_rig' }, { act: [['luka', 'pedal', { speed: 0.9 }]] },
-    { place: 'chase', at: [-2.3, 0, 8.3, -2.3] }, REC(true), { act: [['chase', 'give', { dur: 3 }]] },
+    { place: 'chase', at: [3.9, 0, 8.6, PI] }, REC(true), { act: [['chase', 'give', { dur: 3 }]] },   // the humming machines
     { place: 'declan', at: 'declan_bench' }, { act: [['declan', 'sit', { h: 0.48 }]] },
     { prop: 'bug_list', visible: true },
     { hud: { battery: 1, bars: 2 } },
-    { shot: 'CAM', pos: [7.4, 2.9, 8.0], look: [0.8, 0.9, 13.4], fov: 55 },
+    { shot: 'CAM', pos: [7.4, 2.9, 8.0], look: [-0.2, 0.9, 12.8], fov: 58 },
     { fade: 'in', dur: 0.5 },
     { act: [['declan', 'type']] },
     { do: (c) => { SONG.h = c.AUDIO ? c.AUDIO.song(null, { samples: ['rain'], bars: 8 }) : null; } },
     { timelapse: { dur: 13, cycles: 3, from: 'day', to: 'night', keys: [
       { t: 1.4, steps: [snap('pedal')] },
-      { t: 2.2, steps: [{ place: 'chase', at: [3.9, 0, 8.6, PI] }, { act: [['chase', 'give', { dur: 2 }]] }] },   // the humming machines
-      { t: 4.3, steps: [{ hud: { battery: 2, bars: 2 } }, { place: 'chase', at: 'window_below' }, { act: [['chase', 'look_up']] }] },   // the rain at the window
-      { t: 6.4, steps: [{ place: 'chase', at: [-2.4, 0, 8.25, -2.3] }, { act: [['chase', 'give', { dur: 2 }]] }] },   // the kettle
+      { t: 3.0, steps: [{ hud: { battery: 2, bars: 2 } }, { place: 'chase', at: 'window_below' }, { act: [['chase', 'look_up']] }] },   // the rain at the window
+      { t: 5.8, steps: [{ place: 'chase', at: [-2.4, 0, 8.25, -2.3] }, { act: [['chase', 'give', { dur: 2 }]] }] },   // the kettle
       { t: 8.5, steps: [{ hud: { battery: 3, bars: 2 } }, REC(false), PHONES(true), { place: 'chase', at: 'chase_computer' }, { act: [['chase', 'sit', { h: 0.46 }]] }, { wait: 0.05 }, { act: [['chase', 'type']] },
         { do: (c) => { const d = actor(c, 'declan'); d.play('reading'); c.wait(0.05).then(() => { if (d.rig.attach.textbook) d.rig.attach.textbook.visible = false; }); } },
         { hold: 'declan', prop: 'bug_list' }] },

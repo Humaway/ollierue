@@ -4,10 +4,10 @@
 //   1.1x Chase's walk. lines[0] plays under the opening TRACK (the camera walks backwards ahead of Rue while the boys
 //   scramble in at his shoulders); the rest are a walk-and-talk that pauses while Chase is more than 4 m away (he calls
 //   "Rue! Wait—"). Puddles slow him, umbrellas cross in front of him, the cyclist knocks him aside. Can't fail. Luka
-//   follows. Ends with Rue at the end of his path (-11.4, 0.85), facing east, the boys behind him.
+//   follows by himself at Rue's other shoulder. Ends with Rue at the end of his path (-11.4, 0.85), facing east.
 // rue_walk {walk: 1|2|3}: the player walks Rue; this module holds the routes, the people, their lines and the camera.
 //   1 (2.4)  from where 2.4 leaves him (-9, 0.9) round the north of the Campanile to the Buttery door. High and far
-//            behind; Siobhán, Fiachra and Des come up to him and the only prompt is NO; steering at the Campanile makes
+//            behind, the umbrella crowd cleared off; Siobhán, Fiachra and Des come up to him and the only prompt is NO; steering at the Campanile makes
 //            him veer round it on his own ("Absolutely not.") as the camera rises; halfway, the fake call in profile.
 //   2 (2.12) from the Buttery door straight under the Campanile: input only walks him forward, passers-by are smears
 //            of colour, the NO prompt is greyed out, one held note; close behind, then falling back and rising. Ends
@@ -45,8 +45,8 @@ MINIGAMES.keep_up = (() => {
     ui.letterbox(true);
     api.cam.shot(TRACK);
     stride(t);
-    let steer = true;
-    (async () => { while (steer && t === tok) { toward(chase, shoulder(1, 0.9, A)); toward(luka, shoulder(-1, 0.9, B)); await wait(0.25); } })();
+    let steer = true;   // Luka keeps to Rue's right shoulder the whole way (out of the line between the lens and Chase)
+    (async () => { while (t === tok) { if (steer) toward(chase, shoulder(1, 0.9, A)); toward(luka, shoulder(-1, 0.9, B)); await wait(0.25); } })();
     await wait(0.8);
     if (L[0]) await api.say(L[0][0], L[0][1], { auto: 0.6 });
     await wait(1.2);
@@ -54,8 +54,8 @@ MINIGAMES.keep_up = (() => {
     if (t !== tok) return;
     ui.letterbox(false);
     api.cam.override('follow', FOLLOW); api.cam.release(0.8);
-    chase.place(chase.pos); luka.place(luka.pos);
-    player.control('chase'); player.follower('luka'); player.enabled = true;
+    chase.place(chase.pos);
+    player.control('chase'); player.follower(null); player.enabled = true;
     let callT = -9;
     for (let i = 1; i < L.length; i++) {
       while (gap() > RANGE) {
@@ -343,11 +343,11 @@ MINIGAMES.rue_walk = (() => {
       if (api.cam.cutscene) api.cam.release(walk === 2 ? 0 : 1.2);
       promptEl = document.getElementById('prompt');
       autoOn = false;
+      if (walk !== 3) { crowd = W.prop('umbrella_crowd'); crowdWas = crowd ? crowd.visible : true; if (crowd) crowd.visible = false; }   // he's alone out there
       if (walk === 2) {
         player.control(null);
         rue.walkAnim = 'walk';
         if (typeof music === 'function') music('held_note', { fade: 2 });
-        crowd = W.prop('umbrella_crowd'); crowdWas = crowd ? crowd.visible : true; if (crowd) crowd.visible = false;
         const s = sm = smears(), sc = W.scene;   // its program compiles off the main thread where the browser can
         if (renderer.compileAsync) renderer.compileAsync(s, W.camera, sc).then(() => { if (sm === s) sc.add(s); }, () => { if (sm === s) sc.add(s); });
         else sc.add(s);
