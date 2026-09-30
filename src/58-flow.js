@@ -29,6 +29,7 @@ const { flow, hotspots, inventory, runSteps, playCutscene } = (() => {
     if (g.flags) Object.assign(state.flags, g.flags);
     for (const [k, to] of [['items', 'inventory'], ['names', 'names'], ['samples', 'samples'], ['bugs', 'bugs']])
       if (g[k]) for (const v of g[k]) if (!state[to].includes(v)) state[to].push(v);
+    if (g.removeItems) for (const v of g.removeItems) { const i = state.inventory.indexOf(v); if (i >= 0) state.inventory.splice(i, 1); }   // given away in that scene
     for (const k of ['battery', 'bars', 'pattern', 'active']) if (k in g) state[k] = g[k];
   }
 
@@ -562,7 +563,8 @@ const { flow, hotspots, inventory, runSteps, playCutscene } = (() => {
       if (sc.hotspots) hotspots.list.push(...sc.hotspots);
       if (id !== 'P') saveGame(); // Continue resumes at the start of this scene
       if (ACTS[id]) await ui.actCard(ACTS[id]);
-      if (sc.title) await ui.title(sc.title);
+      // No scene-title card: several titles are the scene's own punchline ("Not Yet", "It's Genius").
+      // Titles live in scene select; date/time cards are authored in the scenes where the script asks.
       if (g !== G) return;
       ui.fade(0, 0.8); // the first step runs in this same tick, so an opening shot (or {fade}) wins
       const steps = sc.steps || [];
