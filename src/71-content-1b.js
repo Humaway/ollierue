@@ -58,6 +58,7 @@
   CARDS.jmon = (cx, w, h, d) => {
     const m = d.mode || 'form', X = 34, Y = 30, W = w - 68, S = h - 90, F = 'system-ui, "Segoe UI", Roboto, sans-serif';
     const font = (px, b = '') => { cx.font = `${b} ${px}px ${F}`; };
+    if (d.zoom) { cx.translate(w / 2, h / 2); cx.scale(d.zoom, d.zoom); cx.translate(-262, -372); }   // ECU on the cursor over YES
     cx.fillStyle = '#2a2c30'; cx.fillRect(w * 0.44, h - 40, w * 0.12, 40);
     cx.fillStyle = '#16181c'; cx.fillRect(0, 0, w, h - 34);
     cx.textBaseline = 'middle';
@@ -129,7 +130,7 @@
       ['objective', null],
       ['cutscene', '1.2_end'],
     ],
-    grants: { flags: { seen_popups: true, seen_margarine: true, seen_mfa: true, seen_optin: true, seen_restarts: true } },
+    grants: { flags: { seen_popups: true, seen_margarine: true, seen_runaway: true, seen_mfa: true, seen_optin: true, seen_restarts: true } },
   };
 
   CUTSCENES['1.2_open'] = [
@@ -142,7 +143,7 @@
     // [MID · across the counter] Chase and Margaret face to face, one on each side of the frame.
     { place: 'margaret', at: 'counter_customer2' },
     { prop: 'margaret_phone', visible: true },
-    { shot: 'TWO', on: ['chase', 'margaret'] },
+    { shot: 'CAM', pos: [1.55, 1.55, -9.05], look: [4.3, 1.42, -9.05], fov: 40 },   // profile from the counter's end: the monitor between them
     { say: 'margaret', text: "Morning, love. I'd like to put my grandson on my plan. He says my phone's embarrassing him." },
     { say: 'chase', text: 'Easy. Five minutes, tops.' },
     // JARVIS Sale: over Chase's shoulder, the app window filling two-thirds of the screen
@@ -224,9 +225,9 @@
     { music: null, fade: 1.2 },
     { place: 'chase', at: 'counter_chase' },
     // [ECU] The cursor over the opt-in box. YES. Click.
-    MON({ mode: 'optin', time: '10:09' }, 26),
+    MON({ mode: 'optin', time: '10:09', zoom: 2.2 }, 26),
     { wait: 1.1 },
-    jmon({ mode: 'optin', time: '10:09', click: true }), { sfx: 'tick' }, { flag: 'seen_optin' },
+    jmon({ mode: 'optin', time: '10:09', zoom: 2.2, click: true }), { sfx: 'tick' }, { flag: 'seen_optin' },
     { wait: 0.7 },
     // [JARVIS-CAM] Chase's face, lit by the screen. The screen goes black, and so does he.
     { shot: 'JARVIS', at: 'monitor2', on: 'chase' },

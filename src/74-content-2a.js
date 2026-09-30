@@ -252,6 +252,20 @@
     await c.playCutscene('2.2_bernie2');
     state.flags.met_bernie = true;
   }
+  // help when stuck (§14 "Continues automatically"): 20 s of roaming in the Buttery without finishing, and Chase's phone plays the beat
+  const BERNIE_AUTO = { id: 'bernie_auto', do: async (c) => { await c.playCutscene('2.2_bernie2'); state.flags.met_bernie = true; } };
+  async function payBernie(c) {
+    tries = 0;
+    await c.playCutscene('2.2_bernie');
+    let t = 0;
+    const f = (dt) => {
+      if (state.flags.met_bernie || flow.sceneId !== '2.2') return removeUpdate(f);
+      if ((t += dt) < 20 || !flow.roaming || flow.busy || flow.cutscene || !inButtery()) return;
+      removeUpdate(f);
+      c.hotspots.trigger(BERNIE_AUTO);
+    };
+    addUpdate(f);
+  }
 
   SCENES['2.2'] = {
     title: 'Plastic Money', set: 'square', env: 'rain', time: 'Tue 6 Oct 1987, 12:30',
@@ -265,14 +279,14 @@
       { id: 'bicycles', at: 'bicycles', r: 1.5, text: 'Every bike in Ireland is here, and all of them are wet.' },
       { id: 'bicycles_s', at: [5.2, 0, -12.9], r: 1.4, when: inSquare, text: 'Every bike in Ireland is here, and all of them are wet.' },
       ...STUDENTS.map(([id]) => ({ id, at: id, r: 1.3, verb: 'Talk', when: inSquare,
-        steps: [{ face: id, to: 'luka' }, { do: (c) => c.say('student', STUDENT_LINES[Math.random() * 3 | 0]) }] })),
+        steps: [{ do: (c) => { c.world.actor(id)?.face(state.active); return c.say('student', STUDENT_LINES[Math.random() * 3 | 0]); } }] })),
       { id: 'buttery_door', at: 'buttery_door', r: 1.0, verb: 'Enter', when: inSquare,
         door: { to: { set: 'buttery', mark: 'door_in' }, kind: 'wood' }, do: enterButtery },
       { id: 'noticeboard', at: 'noticeboard', r: 1.1, verb: 'Read', once: true, flag: 'saw_noticeboard', when: inSquare, do: (c) => c.playCutscene('noticeboard') },
       { id: 'arts_door', at: 'arts_door', r: 1.2, verb: 'Enter', once: true, flag: 'entered_arts', when: (s) => inSquare() && !!s.flags.campanile_done,
         steps: [{ sfx: 'creak' }, { fade: 'out', dur: 0.6 }, { title: '2:00 pm' }] },
       // --- the Buttery
-      { id: 'bernie', at: 'bernie', r: 1.8, verb: 'Pay', once: true, flag: 'bernie_note', when: (s) => inButtery() && !s.flags.bernie_note, do: (c) => c.playCutscene('2.2_bernie') },
+      { id: 'bernie', at: 'bernie', r: 1.8, verb: 'Pay', once: true, flag: 'bernie_note', when: (s) => inButtery() && !s.flags.bernie_note, do: payBernie },
       { id: 'bernie_try', at: 'bernie', r: 1.8, verb: 'Try something else', when: (s) => inButtery() && !!s.flags.bernie_note && !s.flags.met_bernie, do: tryBernie },
       { id: 'bernie_talk', at: 'bernie', r: 1.8, verb: 'Talk', by: 'bernie', when: (s) => inButtery() && !!s.flags.met_bernie,
         text: ["Go on. Pay me when you're back from wherever you're from."] },
@@ -289,7 +303,6 @@
         until: ['met_bernie', 'saw_noticeboard'],
         hint: { after: 120, steps: [{ do: () => objective(state.flags.met_bernie ? 'Find Rue. Try the noticeboard under the arches.' : 'Find Rue. Try the Buttery.') }] },
         async auto(c) {
-          tries = 0;
           for (const id of ['cobbles', 'student_1', 'bicycles', 'buttery_door', 'bernie', 'bernie_try', 'bernie_try', 'urn', 'buttery_exit', 'noticeboard']) await c.hotspots.trigger(id);
         },
       }],
@@ -375,14 +388,14 @@
     { place: 'luka', at: [22.05, 0, -1.45, H] }, { place: 'chase', at: [22.05, 0, -2.3, H] },
     // [INSERT · slow tilt down the poster] TRINITY ENTERPRISE PRIZE 1987 … The tilt ends on one line: Finalists include: RUE (Business Studies).
     { shot: 'CAM', pos: [21.35, 2.35, -2.6], look: [22.95, 2.3, -2.6], fov: 32, to: { look: [22.95, 1.15, -2.6] }, dur: 4.8,
-      card: ['poster', { lines: ['Trinity Enterprise Prize 1987', 'Final: Friday 23 October, the Exam Hall.', 'Judge: Mr G. Fenwick, Fenwick Hale Stockbrokers, London.',
+      card: ['poster', { lines: ['TRINITY ENTERPRISE PRIZE 1987', 'Final: Friday 23 October, the Exam Hall.', 'Judge: Mr G. Fenwick, Fenwick Hale Stockbrokers, London.',
         'Winner receives a graduate placement in the City.', '*Finalists include: RUE (Business Studies)'] }] },
     { do: () => tiltCard(true) },
     { wait: 5.4 },
     // Beside it, a timetable: Business Studies, Tuesdays, 2 pm, Arts Building.
     { do: () => tiltCard(false) },
     { shot: 'CAM', pos: [21.7, 1.7, -1.55], look: [22.95, 1.55, -1.55], fov: 30,
-      card: ['poster', { lines: ['Business Studies', 'Lectures: Tuesdays', '*2 pm, Arts Building', 'Prof. Hartigan'] }] },
+      card: ['poster', { lines: ['Business Studies', 'Tuesdays', '*2 pm', 'Arts Building'] }] },
     { wait: 2.6 },
     // [TWO-SHOT · their reflection in the noticeboard glass]
     { shot: 'CAM', pos: [22.86, 1.62, -1.875], look: [21.6, 1.55, -1.875], fov: 50 },
@@ -453,6 +466,7 @@
 
   CUTSCENES['2.3_roll'] = [
     { flag: 'blended_in' },
+    { prop: 'textbook', visible: false },                   // one textbook, held up between the two of them
     { place: 'luka', at: 'seat_luka' }, { place: 'chase', at: 'seat_chase' },
     { act: [['luka', 'sit'], ['chase', 'sit'], ['hartigan', 'idle']] }, { wait: 0.2 },
     { act: [['luka', 'reading'], ['chase', 'look_down']] },
@@ -461,13 +475,11 @@
     { say: 'hartigan', text: 'Good afternoon. Roll.' },
     { act: [['hartigan', 'look_down']] },
     // [TRACK · along the row, face by face] Each student says "Here" as the camera passes, until it reaches the boys, hunched behind one textbook.
-    { shot: 'CAM', pos: [5.7, 3.95, 5.35], look: [5.2, 3.8, 6.64], fov: 40, to: { pos: [2.95, 3.95, 5.35], look: [2.5, 3.72, 6.64] }, dur: 6.5, ease: 'linear' },
-    { say: 'hartigan', text: 'Brennan. Byrne. Cullen. Doyle. Fitzgerald. Kavanagh…', auto: 0.3 },
-    { say: 'student', text: 'Here.', auto: 0.3 },
-    { say: 'student', text: 'Here.', auto: 0.3 },
-    { say: 'student', text: 'Here.', auto: 0.3 },
-    { say: 'student', text: 'Here.', auto: 0.3 },
-    { wait: 1.0 },
+    { shot: 'CAM', pos: [5.7, 3.95, 5.35], look: [5.2, 3.8, 6.64], fov: 40, to: { pos: [2.95, 3.95, 5.35], look: [2.5, 3.72, 6.64] }, dur: 5.2, ease: 'linear' },
+    { par: [{ wait: 5.8 }, { do: (c) => c.runSteps([     // the track always lands on the boys before the cut
+      { say: 'hartigan', text: 'Brennan. Byrne. Cullen. Doyle. Fitzgerald. Kavanagh…', auto: 0.3 },
+      ...[0, 1, 2, 3].flatMap(() => [{ say: 'student', text: 'Here.', auto: 0.2 }, { wait: 0.2 }]),   // one per face the camera passes
+    ]) }] },
     // [TWO-SHOT · tight]
     { shot: 'TWO', on: ['luka', 'chase'], dist: 1.3 },
     { say: 'chase', text: 'Listen for Rue.', tag: 'whisper' },

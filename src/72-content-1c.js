@@ -63,6 +63,7 @@
   const DOOR_WIDE = { shot: 'CAM', pos: [6.4, 1.8, -14.4], look: [6.4, 1.15, -23.9], fov: 36 };
   const TETHER_SHOT = { shot: 'CAM', pos: [-2.55, 1.08, -13.6], look: [-1.95, 1.6, -12.9], fov: 55 };
   const WRONG = ['Not my birthday.', "Not the store's postcode.", 'Not 1234. Who would use 1234?'];
+  const HUG = { act: [['chase', 'carry', { speed: 0.001 }]] };   // arms round the four phones, feet still
 
   function dress14(c) {
     const P = (n) => c.world.prop(n), f = state.flags;
@@ -207,8 +208,9 @@
     { do: alarmsOn },
     { place: 'luka', at: [-2.0, 0, -9.9, PI] },
     { place: 'chase', at: [-2.0, 0, -13.3, 0] },
+    { do: (c) => c.player.control('luka') },                 // the player's actor drops loco poses when idle: hand it over now
     { do: hugPhones },
-    { act: [['chase', 'carry', { speed: 0 }]] },
+    HUG,
     // [LOW · slow crane up] Chase with four phones hugged to his chest, four alarms screaming, red light pulsing.
     { shot: 'CRANE', size: 'MID', on: 'chase', angle: 'low', from: 0, to: 0.65, dur: 5 },
     { wait: 2.4 },
@@ -219,10 +221,11 @@
     { prop: 'backroom_door', fn: shut },
     DOOR_WIDE,
     { move: 'chase', to: 'backroom_door_out', speed: 1.0 },
+    HUG,
     spinner,
     { wait: 2.2 },
     { popup: null, clear: true },
-    { place: 'chase', at: [6.1, 0, -25.4, PI] },
+    { place: 'chase', at: [8.8, 0, -27.8, PI] },             // through, and out of the doorway's sightline: gone
     { prop: 'backroom_door', fn: open },
     DOOR_WIDE,
     { wait: 1.2 },
@@ -231,7 +234,7 @@
     { expr: [['luka', 'neutral']] },
     { act: [['luka', 'look_up']] },
     { shot: 'INSERT', at: 'ceiling_corner' },
-    { wait: 2 },                                             // a flat two-second hold
+    { stare: 2 },                                            // a flat two-second hold: the 1.4 stare (alarms keep going)
     { act: [['luka', 'idle']] },
     { expr: [['luka', 'worried']] },
     { do: (c) => { const a = c.world.actor('luka'); if (a) a.mood = 'anxious'; } },
@@ -270,7 +273,7 @@
     spinner,
     { wait: 2.2 },
     { popup: null, clear: true },
-    { place: 'luka', at: [6.1, 0, -25.4, PI] },
+    { place: 'luka', at: [8.6, 0, -28.6, PI] },
     { prop: 'backroom_door', fn: open },
     DOOR_WIDE,
     { wait: 1 },
@@ -306,13 +309,34 @@
   CARDS.parts.size = [800, 480];
   const carrying = (name) => { const a = world.actor('luka'); return !!a && a.carry === name; };
 
-  function goggles(c, mode) {                 // 'on' (over the eyes) | 'up' (pushed up the forehead) | 'off'
+  // The soldering iron from the repair bench, its tip on phone 2's contact, the cable trailing to Chase's hands.
+  // Built once; it lies in the set only while 1.5 runs.
+  const TIP = [6.325, 0.05, -27.08];
+  let iron = null;
+  function solderIron(c, on) {
+    if (!iron) {
+      const b = new Builder();
+      b.cyl(0.002, 0.006, 0.05, 6, mat(0xc9ccd1), [0, 0.025, 0]);
+      b.cyl(0.007, 0.007, 0.09, 8, mat(0x8d9398), [0, 0.095, 0]);
+      b.cyl(0.017, 0.013, 0.13, 8, mat(0xd32f2f), [0, 0.205, 0]);
+      b.cyl(0.004, 0.004, 0.4, 4, mat(0x15161a), [0, 0.47, 0]);
+      iron = b.done({ floor: false });
+      iron.position.set(TIP[0], TIP[1], TIP[2]);
+      iron.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(-0.73, 0.42, 0.53).normalize());
+    }
+    const root = on && c.world.prop('machine')?.parent;
+    if (root) { if (iron.parent !== root) root.add(iron); } else iron.removeFromParent();
+  }
+
+  // 'on' (over the eyes) | 'up' (tipped back over the fringe, pivoting on the strap at the back) | 'off'
+  function goggles(c, mode) {
     const a = c.world.actor('chase'), g = a && a.rig.attach.goggles;
     if (!g) return;
     const h = g.userData.home || (g.userData.home = { y: g.position.y, z: g.position.z, rx: g.rotation.x });
     const up = mode === 'up';
     g.visible = mode !== 'off';
-    g.position.y = h.y + (up ? 0.07 : 0); g.position.z = h.z - (up ? 0.03 : 0); g.rotation.x = h.rx - (up ? 0.5 : 0);
+    g.position.y = h.y + (up ? 0.054 : 0); g.position.z = h.z + (up ? 0.044 : 0); g.rotation.x = h.rx - (up ? 0.4 : 0);
+    g.scale.setScalar(up ? 1.1 : 1);
   }
   // The machine grows as the parts arrive. Before the sign it's four phones on the floor; the straightener
   // lies beside them until there's a frame to clamp it to.
@@ -334,6 +358,7 @@
     const d = P('backroom_door'); if (d) shut(d);
     machine(c);
     goggles(c, 'on');
+    solderIron(c, true);
     const cols = SETS.reddy.colliders; if (!cols.includes(OFFICE)) cols.push(OFFICE);
     idle = 0; building = false;
     const ph = P('machine_phones'), st = P('machine_straightener'), tube = P('tube'), ch = c.world.actor('chase'), g = ch && ch.rig.attach.goggles;
@@ -348,7 +373,8 @@
       if (ph) ph.position.y = 0;
       if (st) st.position.y = 0.97;
       if (tube) tube.userData.off = false;
-      if (g && g.userData.home) { const h = g.userData.home; g.visible = false; g.position.y = h.y; g.position.z = h.z; g.rotation.x = h.rx; }
+      if (iron) iron.removeFromParent();
+      if (g && g.userData.home) { const h = g.userData.home; g.visible = false; g.position.y = h.y; g.position.z = h.z; g.rotation.x = h.rx; g.scale.setScalar(1); }
     });
   }
   // a part arrives: tick it off, show the machine, then Chase's list
@@ -408,7 +434,7 @@
         use: { lanyard: [{ if: (s) => s.active === 'luka',
           then: [{ sfx: 'clunk' }, { flag: 'office_open' }, { do: (c) => c.hotspots.trigger('office_in') }],
           else: [{ say: 'chase', text: "That won't work." }] }] } },
-      { id: 'office_in', at: [9.9, 0, -12.2], r: 0.8, verb: 'Open', when: (s) => !!s.flags.office_open, door: { to: 'office_door_in', kind: 'jarvis' } },
+      { id: 'office_in', at: [9.9, 0, -12.2], r: 0.8, verb: 'Open', when: (s) => !!s.flags.office_open, door: { to: [9.9, 0, -14.1, PI], kind: 'jarvis' } },   // a step past the doorway, so the follower lands inside too
       { id: 'office_out', at: [9.9, 0, -13.1], r: 0.8, verb: 'Open', door: { to: [9.9, 0, -12.0, 0], kind: 'jarvis' } },
       { id: 'chair', at: [9.25, 0, -16.35], r: 1.4, verb: 'Take', only: 'luka', when: (s) => !s.flags.part_chair && !world.actor('luka')?.held, do: takeChair },
       // doors: the front doors and the backroom door all load like JARVIS doors
@@ -455,18 +481,19 @@
     { do: dress15 },
     { act: [['chase', 'duck']] },
     // [ECU] A soldering tip touches a contact. A spark fills the frame.
-    { shot: 'CAM', pos: [6.08, 0.36, -26.72], look: [6.32, 0.13, -27.12], fov: 30 },
+    { shot: 'CAM', pos: [6.55, 0.15, -26.77], look: [6.27, 0.08, -27.04], fov: 30 },
     { wait: 1.0 },
-    { sfx: 'spark' }, { do: (c) => sparks(c, [6.3, 0.14, -27.1]) }, { flash: 0.12, color: '#fff3c0' },
+    { sfx: 'spark' }, { do: (c) => sparks(c, TIP) }, { flash: 0.12, color: '#fff3c0' },
     { wait: 0.9 },
     // [WIDE · overhead, slow orbit] Chase in safety goggles, four phones and a tangle of wires: a heist reveal. The tube flickers.
     { shot: 'ORBIT', size: 'WIDE', on: 'machine', angle: 'high', dist: 2.6, height: 0.9, from: -80, to: 10, dur: 8 },
     { wait: 2.2 },
     { do: (c) => flicker(c, 3) },
     { wait: 1.4 },
-    { sfx: 'spark', vol: 0.6 }, { do: (c) => sparks(c, [6.3, 0.14, -27.1]) },
+    { sfx: 'spark', vol: 0.6 }, { do: (c) => sparks(c, TIP) },
     { wait: 2.6 },
-    // [MID · Luka framed in the doorway]
+    // [MID · Luka framed in the doorway] (Chase gets up off the floor under the cut)
+    { act: [['chase', 'idle']] },
     { prop: 'backroom_door', fn: open },
     { place: 'luka', at: 'doorway' },
     { expr: [['luka', 'stunned']] },
@@ -504,18 +531,18 @@
   const PITCH = 'Okay okay okay, hear me out. JARVIS is broken, right? It\'s broken because it was built broken. So we go back to when Rue made JARVIS and we warn him. Every bug. Every pop-up. The margarine thing. He fixes it before it exists. JARVIS works from day one. Margaret gets her grandson on her plan. Dazza pours his slab.';
   // [ORBIT · around Chase, speeding up as he does] each sweep shorter and faster; Luka behind him in every angle
   const ORBITS = [
-    { shot: 'ORBIT', size: 'MID', on: 'chase', dist: 1.85, height: 0.05, from: -22, to: 22, dur: 5, ease: 'in' },
+    { shot: 'ORBIT', size: 'MID', on: 'chase', dist: 1.85, height: 0.05, from: -12, to: 12, dur: 5, ease: 'in' },
     { wait: 4.6 },
-    { shot: 'ORBIT', size: 'MID', on: 'chase', dist: 1.8, height: 0.05, from: 22, to: -22, dur: 3, ease: 'in' },
+    { shot: 'ORBIT', size: 'MID', on: 'chase', dist: 1.8, height: 0.05, from: 12, to: -12, dur: 3, ease: 'in' },
     { wait: 2.8 },
-    { shot: 'ORBIT', size: 'MID', on: 'chase', dist: 1.75, height: 0.05, from: -22, to: 22, dur: 1.8, ease: 'in' },
+    { shot: 'ORBIT', size: 'MID', on: 'chase', dist: 1.75, height: 0.05, from: -12, to: 12, dur: 1.8, ease: 'in' },
     { wait: 1.7 },
-    { shot: 'ORBIT', size: 'MID', on: 'chase', dist: 1.7, height: 0.05, from: 22, to: -24, dur: 1.2, ease: 'in' },
+    { shot: 'ORBIT', size: 'MID', on: 'chase', dist: 1.7, height: 0.05, from: 12, to: -12, dur: 1.2, ease: 'in' },
   ];
 
   CUTSCENES['1.5_pitch'] = [
     { place: 'chase', at: [5.05, 0, -26.3, -H] },
-    { place: 'luka', at: [8.5, 0, -25.1, -2.0] },
+    { place: 'luka', at: [7.2, 0, -24.8, -2.18] },            // 35° off Chase's back axis: clear of him at every angle of the sweep
     { act: [['chase', 'idle'], ['luka', 'idle']] },
     { expr: [['chase', 'determined'], ['luka', 'neutral']] },
     { do: (c) => goggles(c, 'up') },
@@ -525,7 +552,7 @@
     { place: 'chase', at: [7.2, 0, -27.3, -H] },
     { expr: [['luka', 'stunned'], ['chase', 'neutral']] },
     { do: (c) => { const a = c.world.actor('chase'); if (a) a.rig.face.mouth('smile'); } },   // hopeful
-    { shot: 'CAM', pos: [6.42, 1.5, -29.1], look: [6.42, 1.1, -27.2], fov: 52 },
+    { shot: 'CAM', pos: [6.42, 1.45, -24.55], look: [6.42, 1.0, -27.3], fov: 52 },
     { music: null, fade: 0.6 },
     { par: [
       { stare: 3.5, ambient: [['tube_flicker', 0.7], ['spark', 1.7], ['truck_reverse', 2.1]] },
