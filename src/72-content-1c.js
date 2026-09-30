@@ -61,8 +61,9 @@
   const hug = [];                            // four display-phone clones hugged to Chase's chest (shared geometry)
   const WALL_PUSH = { shot: 'POV', from: 'display_wall', at: 'display_wall', move: 'push', amount: 0.6, dur: 6, fov: 26 };
   const DOOR_WIDE = { shot: 'CAM', pos: [6.4, 1.8, -14.4], look: [6.4, 1.15, -23.9], fov: 36 };
-  const TETHER_SHOT = { shot: 'CAM', pos: [-2.55, 1.08, -13.6], look: [-1.95, 1.6, -12.9], fov: 55 };
+  const TETHER_SHOT = { shot: 'CAM', pos: [-2.95, 1.12, -14.2], look: [-2.0, 1.5, -13.3], fov: 55 };   // low on the ledge, phone 1 in the foreground
   const WRONG = ['Not my birthday.', "Not the store's postcode.", 'Not 1234. Who would use 1234?'];
+  const PAD = { shot: 'CAM', pos: [-3.3, 1.75, -2.5], look: [-4.4, 1.35, -0.45], fov: 40 };   // over Luka's shoulder onto the keypad
   const HUG = { act: [['chase', 'carry', { speed: 0.001 }]] };   // arms round the four phones, feet still
 
   function dress14(c) {
@@ -129,7 +130,9 @@
   // The Alarm Code (Luka): the keypad by the front door. Wrong codes 1–3 get a line; the third closes the pad and the
   // camera tilts down to his lanyard; Chase shouts after six. The code is on the back of his badge.
   async function keypad(c) {
-    c.cam.shot({ shot: 'INSERT', at: 'keypad' });
+    const a = c.world.actor('luka');
+    if (a) { a.place('keypad'); a.play('idle'); }
+    c.cam.shot(PAD);
     const r = await c.flow.minigame('keypad', {
       digits: 4, test: '1158',
       async onSubmit(code) {
@@ -155,6 +158,7 @@
       { id: 'keypad', at: 'keypad', r: 1.0, verb: 'Use', only: 'luka', when: (s) => !s.flags.alarm_off, do: keypad },
     ],
     steps: [
+      ['cam', 'fixed', TETHER_SHOT],          // the cutscene ends on the tether angle and eases into this same angle: no jump
       ['cutscene', '1.4_wall'],
       ['minigame', 'tether', {
         shot: TETHER_SHOT, keepAlarms: false,   // the minigame fades its alarms out as the cutscene fades four back in
@@ -163,6 +167,7 @@
           after3: [{ shot: 'WHIP', size: 'MID', on: 'luka' }, { say: 'luka', text: "Those are DISPLAYS. They're TETHERED. They're tethered for a REASON.", expr: 'worried' }],
         },
       }],
+      ['cam', null],
       ['cutscene', '1.4_phones'],
       ['control', 'luka'],
       ['objective', 'Shut off the alarms.'],
@@ -200,6 +205,9 @@
     { wait: 0.6 },
     { move: 'chase', to: [-2.0, 0, -13.3, PI] },
     { wait: 0.4 },
+    // Tether Rip: from low at the wall, looking back at Chase
+    TETHER_SHOT,
+    { wait: 0.5 },
   ];
 
   CUTSCENES['1.4_phones'] = [
@@ -258,7 +266,7 @@
     { wait: 0.6 },
     { say: 'luka', text: '…Past Luka, you legend.' },
     // [WIDE · locked] The alarms stop. Four empty security cables swing in the sudden quiet.
-    { shot: 'CAM', pos: [-2.0, 1.55, -9.8], look: [-2.0, 1.3, -14.3], fov: 44 },
+    { shot: 'CAM', pos: [-2.0, 1.6, -9.8], look: [-2.0, 1.6, -14.3], fov: 44 },
     { loop: 'alarm', stop: true, fade: 0.05 },
     { do: alarmsOff },
     { wait: 3 },
@@ -364,10 +372,14 @@
     const ph = P('machine_phones'), st = P('machine_straightener'), tube = P('tube'), ch = c.world.actor('chase'), g = ch && ch.rig.attach.goggles;
     scope('1.5', (dt) => {
       // Chase calls out the next part after two minutes of wandering
-      if (!building || !flow.roaming || flow.busy || flow.cutscene) return;
+      if (!building || !flow.roaming || flow.busy || flow.cutscene || !player.enabled) return;
       if ((idle += dt) < 120) return;
       idle = 0;
-      for (let i = 0; i < 3; i++) if (!state.flags[PARTS[i]]) { hotspots.trigger({ id: 'build_hint', steps: [{ say: 'chase', text: HINTS[i] }] }); break; }
+      const held = world.actor('luka')?.carry;
+      for (let i = 0; i < 3; i++) {
+        if (state.flags[PARTS[i]] || held === (i === 1 ? 'aframe_sign' : i === 2 ? 'swivel_chair' : '')) continue;
+        hotspots.trigger({ id: 'build_hint', steps: [{ say: 'chase', text: HINTS[i] }] }); break;
+      }
     }, () => {
       const i = cols.indexOf(OFFICE); if (i >= 0) cols.splice(i, 1);
       if (ph) ph.position.y = 0;
@@ -417,14 +429,14 @@
       { id: 'kettle', at: 'kettle', r: 1.0, verb: 'Use', kettle: true },
       { id: 'machine', at: 'machine', r: 1.3, do: (c) => c.playCutscene([{ shot: 'INSERT', at: 'machine', card: partsCard() }, { wait: 2.2 }], { letterbox: false }) },
       // 1. Something that gets really hot: the straightener in the lost property box (either of them)
-      { id: 'straightener', at: 'lost_property', r: 1.0, verb: 'Take', when: (s) => !s.flags.part_straightener,
+      { id: 'straightener', at: 'lost_property', r: 1.2, verb: 'Take', when: (s) => !s.flags.part_straightener,
         steps: [{ prop: 'straightener', visible: false }, { sfx: 'pop' },
           { say: 'chase', text: 'It gets to 230 degrees, Luka.' }, { say: 'luka', text: 'Why do you know that?' },
           { do: (c) => arrive(c, 'part_straightener') }] },
       // 2. Something big and metal: the Yes A-frame out the front (only Luka can carry it)
-      { id: 'sign', at: 'aframe', r: 1.2, verb: 'Take', only: 'luka', when: (s) => !s.flags.part_sign && !world.actor('luka')?.held,
+      { id: 'sign', at: 'aframe', r: 1.3, verb: 'Take', only: 'luka', when: (s) => !s.flags.part_sign && !world.actor('luka')?.held,
         steps: [{ face: 'luka', to: 'aframe' }, { hold: 'luka', prop: 'aframe_sign' }, { sfx: 'clunk' }, { say: 'chase', text: "I'll get the door." }] },
-      { id: 'sign_chase', at: 'aframe', r: 1.2, only: 'chase', when: (s) => !s.flags.part_sign && !carrying('aframe_sign'),
+      { id: 'sign_chase', at: 'aframe', r: 1.3, only: 'chase', when: (s) => !s.flags.part_sign && !carrying('aframe_sign'),
         text: 'Heavier than it looks. And it looks heavy.' },
       // 3. Something to sit in: Luke's swivel chair, behind his locked door (the key's on Luka's lanyard)
       { id: 'office_locked', at: [9.9, 0, -12.2], r: 0.8, verb: 'Open', when: (s) => !s.flags.office_open,
@@ -435,10 +447,10 @@
           then: [{ sfx: 'clunk' }, { flag: 'office_open' }, { do: (c) => c.hotspots.trigger('office_in') }],
           else: [{ say: 'chase', text: "That won't work." }] }] } },
       { id: 'office_in', at: [9.9, 0, -12.2], r: 0.8, verb: 'Open', when: (s) => !!s.flags.office_open, door: { to: [9.9, 0, -14.1, PI], kind: 'jarvis' } },   // a step past the doorway, so the follower lands inside too
-      { id: 'office_out', at: [9.9, 0, -13.1], r: 0.8, verb: 'Open', door: { to: [9.9, 0, -12.0, 0], kind: 'jarvis' } },
-      { id: 'chair', at: [9.25, 0, -16.35], r: 1.4, verb: 'Take', only: 'luka', when: (s) => !s.flags.part_chair && !world.actor('luka')?.held, do: takeChair },
+      { id: 'office_out', at: [9.9, 0, -13.1], r: 0.8, verb: 'Open', door: { to: [9.9, 0, -11.4, 0], kind: 'jarvis' } },   // far enough out that the follower lands outside too
+      { id: 'chair', at: [9.25, 0, -16.35], r: 1.7, verb: 'Take', only: 'luka', when: (s) => !s.flags.part_chair && !world.actor('luka')?.held, do: takeChair },
       // doors: the front doors and the backroom door all load like JARVIS doors
-      { id: 'front_out', at: [-2.0, 0, -0.6], r: 0.8, verb: 'Open', door: { to: [-2.0, 0, 1.1, 0], kind: 'jarvis' } },
+      { id: 'front_out', at: [-2.0, 0, -0.6], r: 0.8, verb: 'Open', door: { to: [-2.0, 0, 1.5, 0], kind: 'jarvis' } },
       { id: 'front_in', at: [-2.0, 0, 0.6], r: 0.8, verb: 'Open', door: { to: [-2.0, 0, -1.1, PI], kind: 'jarvis' } },
       { id: 'br_in', at: [6.4, 0, -23.3], r: 0.8, verb: 'Open', when: () => !carrying('aframe_sign') && !carrying('swivel_chair'),
         door: { to: [6.1, 0, -25.4, PI], kind: 'jarvis' } },
@@ -497,7 +509,7 @@
     { prop: 'backroom_door', fn: open },
     { place: 'luka', at: 'doorway' },
     { expr: [['luka', 'stunned']] },
-    { shot: 'MID', on: 'luka', locked: true },
+    { shot: 'CAM', pos: [6.3, 1.45, -27.1], look: [6.4, 1.3, -24.15], fov: 28 },   // long lens from the machine: the door frame around him
     { wait: 0.5 },
     { say: 'luka', text: 'What. Is. That.' },
     // [CLOSE · Chase pushes his goggles up]
@@ -521,7 +533,7 @@
     // The parts list, in Chase's handwriting.
     { shot: 'INSERT', at: 'machine', card: ['parts', {}] },
     { place: 'luka', at: [6.4, 0, -25.1, PI] },
-    { place: 'chase', at: [5.3, 0, -26.1, 2.6] },
+    { place: 'chase', at: [7.3, 0, -26.5, -2.4] },            // beyond the machine, clear of the backroom camera
     { act: [['chase', 'idle']] },
     { expr: [['chase', 'neutral']] },
     { prop: 'backroom_door', fn: shut },
@@ -552,7 +564,8 @@
     { place: 'chase', at: [7.2, 0, -27.3, -H] },
     { expr: [['luka', 'stunned'], ['chase', 'neutral']] },
     { do: (c) => { const a = c.world.actor('chase'); if (a) a.rig.face.mouth('smile'); } },   // hopeful
-    { shot: 'CAM', pos: [6.42, 1.45, -24.55], look: [6.42, 1.0, -27.3], fov: 52 },
+    { prop: 'machine_chair', fn: (o) => { o.userData.seat.rotation.y = 1.4; } },   // swivelled side-on, so its back doesn't hide the machine
+    { shot: 'CAM', pos: [6.42, 1.55, -24.5], look: [6.42, 0.95, -27.3], fov: 52 },
     { music: null, fade: 0.6 },
     { par: [
       { stare: 3.5, ambient: [['tube_flicker', 0.7], ['spark', 1.7], ['truck_reverse', 2.1]] },
@@ -564,7 +577,7 @@
     { say: 'luka', text: "…it's… genius.", speed: 'slow' },
     // [WIDE] They both nod, deadly serious.
     { expr: [['luka', 'determined'], ['chase', 'determined']] },
-    { shot: 'CAM', pos: [9.6, 2.35, -29.3], look: [6.4, 0.95, -26.6], fov: 50 },
+    { shot: 'CAM', pos: [6.4, 2.3, -24.1], look: [6.4, 0.8, -27.3], fov: 62 },
     { wait: 0.4 },
     { act: [['luka', 'nod', { dur: 1.2 }], ['chase', 'nod', { dur: 1.2 }]] },
     { wait: 1.8 },

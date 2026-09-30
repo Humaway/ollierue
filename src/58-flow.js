@@ -440,7 +440,7 @@ const { flow, hotspots, inventory, runSteps, playCutscene } = (() => {
   // ---------------------------------------------------------- per tick / per frame
   function tick(dt) {
     clock.scale = cutDepth && input.held('no') ? 3 : 1; // hold NO to fast-forward a cutscene
-    if (mg && !mg.paused && !panelOpen && !flow.busy && mg.m.update) {
+    if (mg && !mg.paused && !panelOpen && mg.m.update) {
       try { mg.m.update(dt); } catch (e) { console.error('RUE: minigame update()', e); mg.api.finish({ error: true }); }
     }
     if (!flow.roaming || flow.busy || panelOpen || cutDepth) return;
