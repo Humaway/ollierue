@@ -164,7 +164,7 @@
   // the lab at 3 am: one green screen (Chase's), Luka asleep on the floor, Declan asleep at his bench
   const SCREEN = [-3.42, 1.08, 11.2], LAB_NIGHT = Object.assign({}, SETS.lab.env.night, { hemi: [0x9ae0b0, 0x2a3a30, 0.55], dir: [0x4a8a65, 0.3, [2, 10, -6]] });
   const LAB_WIDE = { shot: 'CAM', pos: [7.45, 2.8, 14.75], look: [-1.0, 0.7, 9.7], fov: 58 };
-  const GREEN = { shot: 'CAM', pos: [-3.74, 1.56, 10.98], look: [-2.92, 1.36, 11.22], fov: 40 };
+  const GREEN = { shot: 'CAM', pos: [-3.74, 1.5, 10.98], look: [-2.92, 1.31, 11.22], fov: 40 };
   const REC = { shot: 'INSERT', at: [-3.55, 0.82, 11.8], from: [-3.0, 1.3, 12.3], fov: 34 };
   const onFace = (c) => lamp(c, true, SCREEN, [-3.1, 1.15, 11.45], 0x62ff7a, 0.9, 1.1);
   const onRec = (c) => lamp(c, true, [-3.3, 1.45, 11.45], [-3.55, 0.78, 11.8], 0x62ff7a, 0.8, 0.9);
@@ -209,6 +209,7 @@
       ['control', 'chase'],
       ['objective', 'Finish the song.'],
       ['roam', { until: 'seq_go', auto: (c) => c.hotspots.trigger('computer') }],
+      ['cam', 'fixed', GREEN],   // the minigame's release eases into this same angle: no jump
       ['cutscene', '3.3_green'],
       ['minigame', 'sequencer', {}],
       ['cutscene', '3.3_finished'],
@@ -366,6 +367,8 @@
   const LODGE_WIDE = { shot: 'CAM', pos: [-24.85, 2.7, 3.3], look: [-21.6, 1.2, 5.3], fov: 60 };
   const OVERCAST = Object.assign({}, SETS.square.env.sunday, { rain: 0 });   // the rain has stopped; the sun isn't out yet
   const BELL = { vol: 0.55 };
+  const DIALING = { shot: 'CAM', pos: [-22.4, 2.0, 6.7], look: [-21.1, 1.35, 5.5], fov: 50 };
+  const HANDS = { shot: 'CAM', pos: [-22.05, 2.2, 5.46], look: [-20.95, 1.3, 5.48], fov: 40 };   // [TWO-SHOT · tight, their hands side by side on the machine]
 
   function squareDress(c) {
     const P = (n) => c.world.prop(n);
@@ -437,8 +440,10 @@
       ['objective', 'Say goodbye.'],
       ['do', waves],
       ['roam', { until: 'at_lodge', auto: (c) => c.hotspots.trigger('lodge') }],
+      ['cam', 'fixed', DIALING],   // (behind the fade) each cutscene below ends on the angle its minigame then sits on
       ['cutscene', '3.4_goodbye'],
       ['minigame', 'dial', { mode: 'final' }],
+      ['cam', 'fixed', HANDS],
       ['cutscene', '3.4_storage'],
       ['minigame', 'final_yes', {}],
       ['cutscene', '3.4_ring'],
@@ -545,7 +550,7 @@
     { move: 'chase', to: CHASE_M, nowait: true }, { move: 'luka', to: LUKA_M },
     { face: 'chase', to: [MACHINE[0], MACHINE[2]] }, { face: 'luka', to: [MACHINE[0], MACHINE[2]] },
     { act: [['chase', 'type']] },
-    { shot: 'CAM', pos: [-22.4, 2.0, 6.7], look: [-21.1, 1.35, 5.5], fov: 50 },
+    DIALING,
     { wait: 0.6 },
   ];
 
@@ -558,7 +563,7 @@
     // [TWO-SHOT · tight, their hands side by side on the machine]
     { act: [['luka', 'type'], ['chase', 'type']] },
     { popup: null, clear: true },
-    { shot: 'CAM', pos: [-22.05, 2.2, 5.46], look: [-20.95, 1.3, 5.48], fov: 40 },
+    HANDS,
     say('luka', 'Together?'),
     say('chase', 'Together.'),
   ];
@@ -578,11 +583,11 @@
     { despawn: 'luka' }, { despawn: 'chase' }, { prop: 'machine', visible: false }, { prop: 'machine_wire', visible: false },
     { wait: 0.5 },
     // [WIDE · Front Square] The lodge window glows and goes dark. 12:00. The Campanile bell begins to ring.
-    { shot: 'CAM', pos: [3.2, 2.3, 9.8], look: [-20.3, 2.3, 4.6], fov: 42 },
-    { do: (c) => lamp(c, true, [-20.95, 2.6, 5.5], [-12.5, 0, 4.5], 0xfff8e8, 60, 0.85) },
+    { shot: 'CAM', pos: [-10.5, 2.0, 8.2], look: [-20.3, 2.2, 5.0], fov: 40 },
+    { do: (c) => lamp(c, true, [-20.7, 2.9, 5.0], [-25.0, 1.2, 4.8], 0xfff8e8, 40, 1.2) },   // the lodge lit white from inside
     { fade: 'in', dur: 0.4 },
     { wait: 0.9 },
-    { do: (c) => { tween(c, 1.4, (k) => { const s = c.world.torch; if (s) s.intensity = 60 * (1 - k); }); } },
+    { do: (c) => { tween(c, 1.4, (k) => { const s = c.world.torch; if (s) s.intensity = 40 * (1 - k); }); } },
     { prop: 'lodge_light', visible: false },
     { wait: 1.6 },
     { do: (c) => lamp(c, false) },
@@ -593,7 +598,7 @@
     { do: (c) => { const r = actor(c, 'rue19'); if (r) { r.walkAnim = 'walk'; if (r.rig.attach.brick) r.rig.attach.brick.visible = false; r.setExpr('neutral'); } } },
     { place: 'rue19', at: [-13.2, 0, 0.9, H] },
     { place: 'des', at: [-20.4, 0, 1.1, 1.75] },
-    { shot: 'MID', on: 'rue19', move: 'track', track: 'alongside', side: 'right', dur: 9 },
+    { shot: 'MID', on: 'rue19', move: 'track', track: 'alongside', side: 'right', dist: 2.6, dur: 9 },
     { move: 'rue19', to: [-4.6, 0, 0.25], nowait: true },
     { wait: 1.2 },
     { act: [['rue19', 'tap', { dur: 1.1, loop: false }]] },
@@ -601,7 +606,7 @@
     { music: 'pudding_walkman', fade: 0.6 },
     { wait: 4.2 },
     // [LOW · from the cobbles] Rue stops directly under the Campanile. Above him, the bell swings.
-    { shot: 'CAM', pos: [-6.4, 0.35, 1.1], look: [0, 5.2, 0], fov: 55 },
+    { shot: 'CAM', pos: [-7.5, 0.4, 2.2], look: [0, 4.6, 0], fov: 60 },
     { move: 'rue19', to: 'under_bell' },
     { face: 'rue19', to: 2.2 },
     { wait: 1.0 },

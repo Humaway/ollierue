@@ -513,7 +513,8 @@ const hud = (() => {
     pct.textContent = (b ?? 0) + '%';
     el.classList.toggle('low', (b ?? 0) <= 5);
     for (let k = 0; k < 4; k++) bars[k].classList.toggle('on', k < (s || 0));
-    ns.classList.toggle('off', s !== 0);
+    ns.classList.toggle('off', s !== 0 || b == null);
+    el.classList.toggle('nobat', b == null); // bars only (3.8): no battery, no "No Service"
   }
   return {
     show,

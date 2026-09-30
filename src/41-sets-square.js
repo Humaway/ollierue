@@ -784,6 +784,7 @@ SETS.square = (() => {
       cy(0, 1.76, 0, 0.13, 0.14, 0.08, 8, 0x1a2030); bx(-0.1, 1.76, 0.06, 0.1, 1.78, 0.2, 0x111111);
     }, 22.2, 0, 5.6);
     porter.visible = false; root.add(porter); L.porter = porter;
+    porter.userData.lock = () => { S.gate = S.gateTo = 1; S.porter = 1; S.pt = 0; porter.visible = true; };   // run the gate-locking walk again now (2.11 POV)
     // a student cycling round the square (2.4 Keep Up): visible = riding, hidden = gone
     const cyc = new THREE.Group(); cyc.name = 'cyclist'; cyc.visible = false; root.add(cyc); L.cyc = cyc;
     const cb2 = new THREE.Mesh(bikeGeo(false), M.C); cyc.add(cb2);
