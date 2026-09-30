@@ -248,7 +248,7 @@
   SCENES['3.1'] = {
     title: 'The Pitch', set: 'square', env: 'rain', time: 'Tue 20 Oct 1987',
     playable: ['rue19', 'luka'], swap: false, hud: { battery: 0, bars: 3 }, music: 'dublin_major',
-    spawn: { rue19: [0, 0, -13.4, 0] },
+    spawn: { rue19: [-11.5, 0, 1.1, H] },
     steps: [
       ['do', (c) => c.world.preload('lab')],
       ['minigame', 'rue_walk', { walk: 3 }],
@@ -297,9 +297,7 @@
     { place: 'rue19', at: [1.8, 0, 10.72, PI] }, { act: [['rue19', 'write']] },
     { place: 'chase', at: [1.2, 0, 11.6, 2.54] },
     { shot: 'INSERT', at: [1.8, 0.77, 10.25], from: [1.8, 1.5, 10.3], fov: 42, card: ['filofax', { text: FILOFAX }] },
-    { wait: 2.6 },
-    { act: [['rue19', 'idle']] }, { face: 'rue19', to: 'chase' },
-    { shot: 'CAM', pos: [3.15, 1.65, 12.3], look: [1.5, 1.5, 11.16], fov: 44 },   // TWO-SHOT at the bench
+    { wait: 1.8 },
     say('rue19', 'How do I keep one phone number alive for thirty-nine years?'),
     say('chase', "Honestly? You'll figure it out."),
     // [TIME-LAPSE · the lab] Three days. Rue and Luka take turns on the bike. HUD: 0% → 4%.
@@ -411,8 +409,7 @@
     { fade: 'in', dur: 0.6 },
     { wait: 2.0 },
     { sfx: 'polaroid' },
-    { flash: 0.4 },
-    { fade: 'out', dur: 0.25, color: '#fff' },
+    { par: [{ flash: 0.5 }, { fade: 'out', dur: 0.3, color: '#fff' }] },
     { wait: 0.5 },
     // [INSERT] The Polaroid developing in Rue's hand. The image never quite resolves.
     { expr: [['rue19', 'neutral']] }, { act: [['rue19', 'reading']] }, hideBook('rue19'),
@@ -431,7 +428,6 @@
   // The lodge window (east wall, glass at x -20.26, z 4.6–6.5; the mullion at z 5.55; a transom at y 2.19). Des's desk under it.
   const CH_CUP = [-25.0, 0.46, 3.42, 2.84], LU_CUP = [-24.4, 0.46, 3.62, -2.79];   // in front of the cupboard, at the machine
   const MACHINE = [-24.75, 1.33, 2.75], M_FROM = [-24.55, 1.8, 3.3];                  // the machine on its shelf (the open door blocks the anchor's lens)
-  const BEHIND = [-24.75, 1.5, 2.58];                                               // the lens, behind the machine's little screen
   const CH_WIN = [-21.45, 0.46, 4.85, 0.35], LU_WIN = [-21.45, 0.46, 6.3, PI - 0.35];  // either side of the mullion
   const CH_SIDE = [-21.45, 0.46, 5.78, H], LU_SIDE = [-21.45, 0.46, 6.32, H];          // shoulder to shoulder, looking out
   const RUE_GATE = [-16.9, 0, 2.3, 0.8], DES_GATE = [-16.3, 0, 2.9, -2.35];          // across the square by the gate, under a lamp
@@ -443,15 +439,19 @@
   const TWO_IN = { shot: 'CAM', pos: [-20.3, 2.0, 6.05], look: [-21.45, 1.92, 6.05], fov: 54 };    // inside, from the window: no bar
   const WIN_POV = { shot: 'CAM', pos: [-20.7, 2.0, 5.68], look: [-16.6, 1.45, 2.6], fov: 30 };   // through the pane between the bars
   const TOP_DOWN = { shot: 'TOP', on: 'chase', dist: 1.5, offset: 0.25 };   // 1.2's frame
-  const JCAM = { shot: 'JARVIS', at: [-24.7, 2.0, 3.64], from: BEHIND, fov: 50 };   // (at = between their faces: the lens looks out at both)
+  const JCAM = { shot: 'JARVIS', at: 'machine_back', on: ['chase', 'luka'] };   // 1.2's framing: behind the screen, fitted to their faces
 
   // The pop-up. In the cutscene its buttons are drawn but inert (YES advances the talk, not the pop-up).
-  function storagePopup(c, live, ding = true) {
-    const p = c.popup({ msg: MSG, title: 'STORAGE FULL', icon: 'warn', buttons: [], cls: 'big', at: [0.5, 0.43], ding });
+  function storagePopup(c, live) {
+    const p = c.popup({ msg: MSG, title: 'STORAGE FULL', icon: 'warn', buttons: [], cls: 'big', at: [0.5, 0.43] });
     const row = p.el.querySelector('.jv-btns'), B = [];
     for (const t of ['YES', 'NO']) { const b = document.createElement(live ? 'button' : 'span'); b.className = 'jv-b'; b.textContent = t; row.append(b); B.push(b); }
     return { p, yes: B[0], no: B[1] };
   }
+  // "The pop-up waits": the first one is kept through the close-up, parked off screen (place() resets it if the pool reuses it)
+  const HELD = { el: null, tf: '' };
+  const park = { do: () => { const e = HELD.el; if (e) { HELD.tf = e.style.transform; e.style.transform = 'translate(-9999px,0)'; } } };
+  const unpark = { do: () => { const e = HELD.el; if (e && !e.classList.contains('off')) e.style.transform = HELD.tf; } };
   // The choice, with the player in control: YES is greyed out and only clunks; only NO works tonight.
   async function choice(c) {
     if (c.flow.skipping) return;
@@ -506,14 +506,11 @@
     grants: { flags: { machine_checked: true, storage_seen: true }, battery: 4, bars: 4 },
   };
 
-  // The lodge at night from across the square: the lit window in the rain, Luka in it.
+  // The lodge at night from across the square: the lit window in the rain, Luka in it (the gate kept out of shot for the POV).
   CUTSCENES['3.2_open'] = [
-    { face: 'luka', to: [-16.9, 2.3] },
-    gateLight,
-    { shot: 'CAM', pos: [-9.5, 1.6, 3.2], look: [-20.4, 2.2, 5.2], fov: 38, to: { pos: [-11.5, 1.7, 3.9], look: [-20.4, 2.2, 5.3], fov: 34 }, dur: 4 },
-    { act: [['rue19', 'laugh']] },
+    { place: 'luka', at: [-20.7, 0.46, 6.3, 2.2] }, { face: 'luka', to: [-16.9, 2.3] },
+    { shot: 'CAM', pos: [-11.0, 1.9, 6.4], look: [-20.3, 2.2, 5.6], fov: 26, to: { pos: [-13.0, 2.0, 6.1], look: [-20.3, 2.2, 5.6], fov: 22 }, dur: 4 },
     { wait: 3.2 },
-    { act: [['rue19', 'idle']] },
   ];
 
   CUTSCENES['3.2_storage'] = [
@@ -533,33 +530,29 @@
     // [JARVIS-CAM · from behind the machine's screen] The framing from 1.2. A pop-up lands over their faces.
     JCAM,
     { wait: 0.5 },
-    { do: (c) => { storagePopup(c, false); } },
+    { do: (c) => { HELD.el = storagePopup(c, false).p.el; } },
     { expr: [['chase', 'stunned'], ['luka', 'worried']] },
     { wait: 1.4 },
     say('luka', "What's being cleared?"),
-    { popup: null, clear: true },
+    park,
     // [CLOSE · Chase]
     { expr: [['chase', 'sad']] },
     winLight(true),   // (the JARVIS-CAM borrowed the spot)
     { shot: 'CLOSE', on: 'chase' },
     slow('chase', 'The cache.'),
-    { shot: 'CLOSE', on: 'luka' },
     say('luka', "What's in the cache?"),
-    { shot: 'CLOSE', on: 'chase' },
     say('chase', "Us. Everything since we got here. It won't fit down the line. The machine can take us home. It can't take… this."),
-    { shot: 'CLOSE', on: 'luka' },
     say('luka', "We'll forget?"),
-    { shot: 'CLOSE', on: 'chase' },
     slow('chase', 'Des. Bernie. Declan. Him. The floor. The torches. ^ Each other. The real version.'),
     // Silence. The pop-up waits.
     JCAM,
-    { do: (c) => { storagePopup(c, false, false); } },
+    unpark,
     { wait: 2.4 },
     { popup: null, clear: true },
     winLight(true),
     // He goes to the window; Luka follows, and stops on the other side of the frame. The bars drop to 1.
     { shot: 'CAM', pos: [-25.2, 3.1, 4.9], look: [-21.4, 1.5, 5.4], fov: 60 },
-    { move: 'chase', to: CH_WIN },
+    { move: 'chase', to: CH_WIN, nowait: true },
     { move: 'luka', to: LU_WIN },
     { face: 'chase', to: CH_WIN[3] }, { face: 'luka', to: LU_WIN[3] },
     { hud: { bars: 1 }, anim: 1.5 },
@@ -574,11 +567,11 @@
     LU_ONE,
     say('luka', 'And back home?'),
     CH_ONE,
-    say('chase', "Back home I'm a casual who sells screen protectors and cries into his hands."),
+    slow('chase', "Back home I'm a casual who sells screen protectors and cries into his hands."),
     LU_ONE,
     slow('luka', "You're more than that."),
     CH_ONE,
-    say('chase', "Not there I'm not. Here I built a time machine. Here I matter."),
+    slow('chase', "Not there I'm not. Here I built a time machine. Here I matter."),
     // [TWO-SHOT · locked, the window bar between them] Luka looks at Chase. A beat. Rain on the glass.
     { ...TWO_BAR, locked: true },
     { wait: 1.4 },
@@ -587,7 +580,7 @@
     slow('luka', "Then I'll have to think it again."),
     // [MID · Luka]
     LU_MID,
-    say('luka', "If you stay, you change everything. Every phone. Every… everything. Reddy might not exist. Margaret might never get her grandson on her plan. ^ I might not exist. You might meet me in 2026 and I'm some bloke who never said yes to anything."),
+    slow('luka', "If you stay, you change everything. Every phone. Every… everything. Reddy might not exist. Margaret might never get her grandson on her plan. ^ I might not exist. You might meet me in 2026 and I'm some bloke who never said yes to anything."),
     say('chase', '…'),
     say('luka', 'You wanted to change the world. Mate. Look at him.'),
     // [POV · through the lodge window] Across the square, at the gate, Rue laughing at something Des said.
@@ -614,7 +607,6 @@
     { wait: 0.4 },
     { act: [['chase', 'hands_halt', { dur: 2.8, loop: false }]] },
     { wait: 3.0 },
-    TWO_IN,
     slow('chase', 'So we forget.'),
     slow('luka', 'We forget.'),
     say('chase', "Then we'd better write it down."),

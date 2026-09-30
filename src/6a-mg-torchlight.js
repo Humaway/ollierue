@@ -5,14 +5,15 @@
 // "Winning Is a Decision" (an HRTF loop you find by ear; content puts the prop 'rue_walkman' at params.walkman), his scarf
 // snagged on lamp_4, then the Campanile's north steps and Rue. NO switches the torches off (the drain pauses; in the dark
 // you can only follow the sound). TAB swaps Luka and Chase. Random barks while searching.
-// The drain is rubber-banded to the distance left, drainRate = battery / max(remaining / walkSpeed, 20 s), so the battery
-// never runs out before the find and the HUD counts 4 -> 3 -> 2 -> 1; the find cutscene takes it to 0%.
+// The drain is rubber-banded to the distance left to the find, drainRate = battery / max(toFind / walkSpeed, 1.5 s): walking
+// the trail it falls in a straight line to ~0 at the find (never before it), so the HUD counts 4 -> 3 -> 2 -> 1 (1% for the
+// last quarter) and the find cutscene takes it to 0% as the torches die.
 // params: {walkman: [x, y, z]} -> {found: true} (the beam on Rue). The follow camera is left on for the cutscene to cut from.
 MINIGAMES.torchlight = (() => {
   const WAY = [[-19.8, 0.9], [-16.5, 5.8], [-12, 9.6], [-6.5, 12], [4, 11.5], [8.6, 8.4], [2.4, 5.6], [0.6, 4.9]];
   const CUM = [0];
   for (let i = 1; i < WAY.length; i++) CUM.push(CUM[i - 1] + Math.hypot(WAY[i][0] - WAY[i - 1][0], WAY[i][1] - WAY[i - 1][1]));
-  const LEN = CUM[CUM.length - 1], SCARF = [10, 9], RUE = [0.45, 3.97];
+  const LEN = CUM[CUM.length - 1], SCARF = [10, 9], RUE = [0.45, 3.97], FIND = 2.9;   // (trail metres left when the beam finds him)
   const FOLLOW = { dist: 2.3, height: 2.05, lag: 0.3, fov: 55 }, BEAM = 34;
   const BARKS = [['luka', 'Rue!'], ['chase', "Rue! It's Other Australia!"], ['luka', "Mate, it's cold, come on."]];
   let api, tok = 0, done = true, on = true, B = 4, gotW = false, gotS = false, barkT = 0, bi = 0, talking = false, loop = null, wm = null, W = [4, 0, 11.5];
@@ -76,7 +77,7 @@ MINIGAMES.torchlight = (() => {
       if (input.pressed('swap')) { input.consume('swap'); swap(); return; }
       if (input.pressed('no')) { input.consume('no'); on = !on; api.sfx('tick', { vol: 0.7 }); prompt(); }
       const x = a.pos.x, z = a.pos.z, rem = Math.max(0, LEN - along(x, z));
-      if (on) B -= B / Math.max(rem / CONFIG.walk, 20) * dt;
+      if (on) B -= B / Math.max((rem - FIND) / CONFIG.walk, 1.5) * dt;
       const s = api.world.torch;
       if (s) { s.intensity = on ? BEAM * (B < 1.3 ? 0.75 + 0.25 * Math.random() : 1) : 0; aim(a, s); }   // it gutters near the end
       const n = Math.max(1, Math.ceil(B - 1e-6));

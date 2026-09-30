@@ -46,7 +46,7 @@
       g = PUT[n] = new THREE.Group(); g.name = 'rue_' + n; g.add(m);
     }
     c.world.scene.add(g);
-    g.position.set(at[0], at[1], at[2]); g.rotation.set(rot[0], rot[1], rot[2]); g.visible = true;
+    g.position.set(at[0], at[1], at[2]); g.rotation.set(rot[0], rot[1], rot[2]); g.scale.setScalar(1); g.visible = true;
     return g;
   }
   const pickUp = (n) => { const g = PUT[n]; if (g && g.parent) g.parent.remove(g); };
@@ -60,10 +60,24 @@
   // =================================================================== 2.11 — "The Phone That Never Rings"
   const CHASE_STEP = [-1.0, 0, 3.97, 0];
   const STONE = [-0.28, 0.63, 3.8], WALKMAN_STONE = [-0.1, 0.478, 3.7];   // the brick phone upright on the stone between them; the Walkman flat beside it
-  // [TWO-SHOT · side-on] the two of them on the step, the phone standing between them (used twice)
-  const SIDE = { pos: [2.2, 1.05, 7.3], look: [-0.3, 0.78, 3.95] };
+  // [TWO-SHOT · side-on] the two of them on the step from the side (~60° off their facing), the phone standing between them
+  const SIDE = { pos: [3.25, 1.05, 5.95], look: [-0.3, 0.78, 3.95] };
   const TWO_SIDE = { shot: 'CAM', pos: SIDE.pos, look: SIDE.look, fov: 38 };
   const nearRue = () => { const a = world.actor('chase'), r = world.actor('rue19'); return !!a && !!r && Math.hypot(a.pos.x - r.pos.x, a.pos.z - r.pos.z) < 8.5; };
+  // (the roam) Chase walks toward a voice: Rue's "call", wordless, his mouth going, carrying across the square
+  async function chatter(c) {
+    const r = actor(c, 'rue19');
+    while (r && c.flow.sceneId === '2.11' && !c.flow.skipping && !nearRue()) {
+      const ch = actor(c, 'chase');
+      if (ch && Math.hypot(ch.pos.x - r.pos.x, ch.pos.z - r.pos.z) < 20) {
+        c.world.talk('rue19', true);
+        for (let i = 5 + Math.random() * 9 | 0; i > 0; i--) { if (c.AUDIO) c.AUDIO.blip('rue19'); await c.wait(0.12); }
+        c.world.talk('rue19', false);
+      }
+      await c.wait(0.8 + Math.random() * 1.4);
+    }
+    c.world.talk('rue19', false);
+  }
 
   function dress211(c) {
     tidyRue(c);
@@ -80,10 +94,12 @@
     title: 'The Phone That Never Rings', set: 'square', env: 'sunday', time: 'Sun 18 Oct 1987',
     playable: ['chase'], swap: false, hud: { battery: 4, bars: 2 }, music: null,   // no music; just rain
     spawn: { chase: 'lodge_out', rue19: 'steps_rue' },
+    hotspots: [{ id: 'gutter', at: 'gutter', r: 1.4, sample: 'rain' }],   // (the rain sample, from 2.6)
     steps: [
       ['cutscene', '2.11_call'],
       ['control', 'chase'],
       ['objective', 'Talk to Rue.'],
+      ['do', (c) => { chatter(c); }],
       ['roam', { until: nearRue, async auto(c) { await actor(c, 'chase').moveTo([-5, 0, 9]); } }],
       ['objective', null],
       ['cutscene', '2.11_steps'],
@@ -139,12 +155,11 @@
     say('rue19', 'A man in Ohio.'),
     say('chase', 'When did you last listen to an actual song?'),
     say('rue19', "Music's for people with time."),
-    // Chase stares at him like he's confessed to a crime.
-    { shot: 'CLOSE', on: 'chase', locked: true },
+    // Chase stares at him like he's confessed to a crime. (held in the two-shot)
     { expr: [['chase', 'stunned']] },
+    { do: (c) => glanceAt(c, 'chase', 'rue19', 2.0) },
     { wait: 1.8 },
     { expr: [['chase', 'neutral']] },
-    TWO_SIDE,
     say('chase', 'How much was the phone?'),
     say('rue19', 'Everything I had.'),
     // [CLOSE · Chase]
@@ -156,11 +171,9 @@
     slow('chase', "…I don't know. I've been trying to work it out my whole life."),
     // [POV · Rue's, across the square] Students heading home. A porter locking a gate.
     { prop: 'porter', fn: (o) => { if (o.userData.lock) o.userData.lock(); } },
-    { shot: 'POV', from: 'rue19', at: [4, 1.5, 14.5], move: 'pan', to: [22.3, 1.3, 5.6], dur: 10 },
+    { shot: 'POV', from: 'rue19', at: [4, 1.5, 14.5], move: 'pan', to: [22.3, 1.3, 5.6], dur: 16 },
     slow('rue19', "Everyone's going, you know. Half my year. London. Boston. Sydney. Every Christmas there's fewer of us in the pub. So I'm going first. And I'll be so busy I won't miss anyone."),
-    { shot: 'CLOSE', on: 'chase', locked: true },
     say('chase', 'Does that work?'),
-    { shot: 'CLOSE', on: 'rue19', locked: true },
     say('rue19', '^It will.'),
     say('chase', "What if he doesn't ring?"),
     say('rue19', "He'll ring."),
@@ -171,9 +184,9 @@
     say('rue19', 'Sounds exhausting.'),
     slow('chase', "It is. ^ It's also the best bit."),
     // [CRANE · slowly up] Away from the two small figures, up the stone of the Campanile, to the silent bell.
-    { shot: 'CAM', pos: [2.0, 1.3, 8.3], look: [-0.25, 0.9, 4.0], fov: 40, to: { pos: [1.1, 10.3, 7.0], look: [0, 9.9, 0.4], fov: 40 }, dur: 11 },
-    { wait: 11.5 },
-    { fade: 'out', dur: 1.2 },
+    { shot: 'CAM', pos: [2.0, 1.3, 8.3], look: [-0.25, 0.9, 4.0], fov: 40, to: { pos: [1.1, 10.3, 7.0], look: [0, 9.9, 0.4], fov: 40 }, dur: 6 },
+    { wait: 5 },
+    { fade: 'out', dur: 1.2 },   // (it lands on the bell as the fade takes it)
     { do: (c) => { tidyRue(c); stand(c, 'chase'); } },
   ];
 
@@ -184,10 +197,32 @@
     const k = ++ringing;
     while (k === ringing && !c.flow.skipping && c.flow.sceneId === '2.12') { c.sfx('brick_ring', { vol: 0.9 }); await c.wait(3); }
   }
+  // his overcoat over the back of his chair (he walks out into the rain without it); taken away under the fade at the end
+  let COAT = null;
+  function coat(c, on) {
+    if (!COAT) {
+      const b = new Builder(), m = mat(0x86683f), d = mat(0x5e4527);
+      b.box(0.44, 0.52, 0.05, m, [0, 0.66, -0.225]); b.box(0.43, 0.05, 0.1, m, [0, 0.915, -0.19]);   // hanging down the back, folded over the rail
+      b.box(0.4, 0.08, 0.055, d, [0, 0.88, -0.235]); b.box(0.07, 0.42, 0.04, m, [0.2, 0.6, -0.2]);    // collar; a sleeve down the side
+      COAT = b.done(); COAT.name = 'rue_coat';
+    }
+    if (on) { c.world.scene.add(COAT); COAT.position.set(5.9, 0, -4.1); } else if (COAT.parent) COAT.parent.remove(COAT);
+  }
+  // one student near the TV reads the prices aloud, horrified: wordless, pointing at the screen
+  async function readAloud(c) {
+    const a = actor(c, 'st_news');
+    if (!a) return;
+    a.setExpr('stunned'); a.play('point');
+    c.world.talk('st_news', true);
+    for (let i = 0; i < 26 && !c.flow.skipping; i++) { if (c.AUDIO) c.AUDIO.blip('student', i % 9 === 8); await c.wait(i % 9 === 8 ? 0.5 : 0.11); }
+    c.world.talk('st_news', false);
+    a.play('idle'); a.setExpr('worried');
+  }
   function dress212(c) {
     const P = (n) => c.world.prop(n);
     tidyRue(c);
     seat(c, 'rue19', 'rue_seat', 0.46, 'idle');
+    coat(c, true);
     putDown(c, 'brick', TABLE_PHONE, [0, -H, -H]);
     const tv = P('tv_screen'); if (tv && tv.userData.show) tv.userData.show('news');
     const cr = P('crowd'); if (cr && cr.userData.look) cr.userData.look('tv');
@@ -201,13 +236,35 @@
     await at('No, of'); f.eyes('half'); f.brows('worried');
     await at('Thank you'); f.mouth('smile');
   }
-  function lowerPhone(c) {   // very carefully
-    const g = putDown(c, 'brick', [TABLE_PHONE[0], TABLE_PHONE[1] + 0.2, TABLE_PHONE[2]], [0, -H, -H]);
-    if (!g) return;
-    if (c.flow.skipping) { g.position.y = TABLE_PHONE[1]; return; }
-    let t = 0;
-    const f = (dt) => { t = Math.min(1, t + dt / 2.2); const k = t * t * (3 - 2 * t); g.position.y = TABLE_PHONE[1] + 0.2 * (1 - k); if (t >= 1) removeUpdate(f); };
-    addUpdate(f);
+  // 'set_down': the brick phone from his ear, slowly, down flat on the table by his hand (the 'tap' reach, the hand turned
+  // flat, a lean), let go (the rig's brick hides at u 0.64: content lays the table copy there), then the hand back
+  const SET_DOWN = [5.83, 0.777, -3.65], SET_ROT = [0, 2.28, -H], SET_T = 3.6;   // where that lands; its display up
+  if (!ANIMS.set_down) {
+    const N = ['torso', 'head', 'armR', 'foreR', 'handR'], R0 = N.map(() => new THREE.Quaternion()), PH = N.map(() => new THREE.Quaternion()),
+      D = N.map(() => new THREE.Quaternion()), q = new THREE.Quaternion(), sm = (x) => x * x * (3 - 2 * x);
+    const grab = (P, Q) => { for (let i = 0; i < N.length; i++) Q[i].setFromEuler(P[N[i]].rotation); };
+    const put = (P, Q) => { for (let i = 0; i < N.length; i++) { const o = P[N[i]].rotation; o.setFromQuaternion(Q[i], o.order); } };
+    ANIMS.set_down = (r, t, p) => {
+      const P = r.parts, u = Math.min(1, t / SET_T);
+      grab(P, R0);                                                   // the seated rest (the pose's sit pass)
+      ANIMS.phone(r, t, p); grab(P, PH); put(P, R0);
+      ANIMS.tap(r, 0, p); P.handR.rotation.set(0, 1, 0); P.torso.rotation.x += 0.2; P.head.rotation.x += 0.3; grab(P, D);
+      const [A, B, k] = u < 0.6 ? [PH, D, sm(u / 0.6)] : u < 0.75 ? [D, D, 1] : [D, R0, sm((u - 0.75) / 0.25)];
+      for (let i = 0; i < N.length; i++) { const o = P[N[i]].rotation; q.copy(A[i]).slerp(B[i], k); o.setFromQuaternion(q, o.order); }
+      if (r.attach.brick) r.attach.brick.visible = u < 0.64;
+    };
+    ANIMS.set_down.upper = true; ANIMS.set_down.shows = 'brick';
+  }
+  async function lowerPhone(c) {   // very carefully: his hand lays it down, then lets go
+    const r = actor(c, 'rue19'), b = r && r.rig.attach.brick;
+    if (!b) return;
+    r.play('set_down');
+    if (!c.flow.skipping) await waitUntil(() => c.flow.skipping || r.anim !== 'set_down' || !b.visible);
+    const g = putDown(c, 'brick', SET_DOWN, SET_ROT);
+    if (!g || c.flow.skipping || r.anim !== 'set_down') return;
+    b.updateMatrixWorld(true);   // exactly where his hand left it
+    b.getWorldQuaternion(g.quaternion); b.getWorldScale(g.scale);
+    b.localToWorld(g.position.copy(g.children[0].position).negate());   // (the copy's pivot is the mesh's centre)
   }
   function toWindow(c) {   // Rue out on the street in the rain; the boys at the window
     pickUp('brick');
@@ -222,11 +279,11 @@
   SCENES['2.12'] = {
     title: 'Black Monday', set: 'buttery', env: 'day', time: 'Mon 19 Oct 1987',
     playable: ['rue19'], swap: false, hud: { battery: 4, bars: 0 }, music: null,
-    spawn: { rue19: 'rue_seat', luka: 'tv_watch', chase: 'tv_watch2', bernie: 'counter_bernie' },
+    spawn: { rue19: 'rue_seat', luka: 'tv_watch', chase: 'tv_watch2', bernie: 'counter_bernie', st_news: { at: [0.6, 0, 0.05, 0.86], look: 'student_d' } },
     steps: [
       ['do', (c) => c.world.preload('square')],
       ['cutscene', '2.12_news'],
-      ['set', 'square', { env: 'rain', spawn: { rue19: [7.27, 0, 13.6, PI] } }],
+      ['do', (c) => { c.ui.fade(0, 0.8); }],   // (the walk's own camera is on from its first frame)
       ['minigame', 'rue_walk', { walk: 2 }],
       ['cutscene', '2.12_bell'],
     ],
@@ -241,7 +298,8 @@
     // [PAN · across the Buttery] Faces turned up to the screen. A student reads the prices aloud, horrified.
     { shot: 'CAM', pos: [4.5, 2.15, 3.3], look: [-3.0, 0.95, 0.4], fov: 50, to: { look: [3.0, 0.95, -3.6] }, dur: 8 },
     { sfx: 'murmur', vol: 0.8 },
-    { wait: 3.2 },
+    { do: (c) => { readAloud(c); } },
+    { wait: 3.6 },
     say('bernie', "London's down ten percent. What does that mean?"),
     // [TWO-SHOT · tight] (from under the TV: both faces up to it)
     { shot: 'CAM', pos: [4.25, 1.72, 2.15], look: [3.3, 1.5, -0.12], fov: 36 },
@@ -257,13 +315,13 @@
     say('chase', 'We warned him about JARVIS and he said no!'),
     // [WIDE · the whole Buttery, Rue at his corner table] The brick phone rings: a harsh 80s electronic trill the player
     // needs to remember. The first time, ever. Every head turns toward him, and the camera turns with them, pushing slowly in on Rue.
-    { shot: 'CAM', pos: [-7.4, 3.0, -0.6], look: [2.5, 0.9, -2.0], fov: 55, to: { pos: [1.6, 1.9, -1.2], look: [5.9, 1.05, -3.9], fov: 44 }, dur: 7 },
+    { shot: 'CAM', pos: [-7.4, 3.0, -0.6], look: [2.5, 0.9, -2.0], fov: 55, to: { pos: [1.6, 1.9, -1.2], look: [5.9, 1.05, -3.9], fov: 44 }, dur: 5 },
     { do: (c) => { ring(c); } },
     { wait: 0.8 },
     { prop: 'crowd', fn: (o) => { if (o.userData.look) o.userData.look('rue_seat'); } },
-    { face: 'bernie', to: 'rue19', dur: 0.6 }, { face: 'luka', to: 'rue19', dur: 0.8 }, { face: 'chase', to: 'rue19', dur: 0.7 },
+    { face: 'bernie', to: 'rue19', dur: 0.6 }, { face: 'luka', to: 'rue19', dur: 0.8 }, { face: 'chase', to: 'rue19', dur: 0.7 }, { face: 'st_news', to: 'rue19', dur: 0.7 },
     { expr: [['chase', 'neutral']] },
-    { wait: 6.4 },
+    { wait: 4.2 },
     // [ECU] The phone's display lights up green.
     { shot: 'INSERT', at: TABLE_PHONE, from: [5.62, 1.12, -3.36], fov: 30, card: ['brick', { lit: true }] },
     { wait: 2 },
@@ -275,11 +333,10 @@
     { shot: 'CLOSE', on: 'rue19', move: 'push', amount: 0.62, dur: 14, ease: 'linear' },
     { wait: 0.6 },
     { par: [slow('rue19', 'Rue speaking. ^ Mr Fenwick. Yes. Yes, I saw. ^ Frozen. All graduate hiring. ^ No, of course. Of course. ^ Yes. Thank you for letting me know.'), { do: emptySmile }] },
-    // [INSERT] He puts the phone down on the table very carefully.
-    { act: [['rue19', 'idle']] },
-    { shot: 'INSERT', at: TABLE_PHONE, from: [6.05, 1.15, -3.0], fov: 34 },
+    // [INSERT] He puts the phone down on the table very carefully. (his hand comes down into the frame with it)
+    { shot: 'INSERT', at: SET_DOWN, from: [6.3, 1.25, -2.95], fov: 38 },
     { do: lowerPhone },
-    { wait: 2.6 },
+    { wait: 1.2 },
     { shot: 'CLOSE', on: 'rue19', locked: true },
     say('chase', 'Rue?', { tag: 'off' }),
     slow('rue19', "The prize is still on, apparently. They just won't be giving anyone anything."),
@@ -289,21 +346,26 @@
     { do: toWindow },
     { shot: 'CAM', pos: [5.0, 1.45, 0.1], look: [9.0, 2.15, -0.3], fov: 50 },
     { move: 'rue19', to: [10.25, 1.3, 6.5], nowait: true },
-    { wait: 5.5 },
+    { wait: 4 },
     { fade: 'out', dur: 1.0 },
+    { do: (c) => coat(c, false) },
+    // (Front Square, under black: one tick for the set to dress itself for the rain before the walk clears it)
+    { set: 'square', env: 'rain', spawn: { rue19: [7.27, 0, 13.6, PI] } },
+    { wait: 0.2 },
   ];
 
   CUTSCENES['2.12_bell'] = [
     { do: (c) => { const r = actor(c, 'rue19'); if (r) { r.walkAnim = 'walk'; r.face(PI, 0); } } },
     { prop: 'umbrella_crowd', visible: false },   // a grey square with nobody in it
     // [CRANE · up to the silent bell and back down] He sits on its steps.
-    { shot: 'CAM', pos: [0.45, 2.0, -1.1], look: [0.35, 1.85, 2.6], fov: 50, to: { pos: [0.25, 8.3, 0.25], look: [0.25, 10.3, 0.3], fov: 55 }, dur: 5.5 },
-    { wait: 5.8 },
-    { move: 'rue19', to: 'steps_rue', nowait: true },
-    { wait: 1.6 },
+    { shot: 'CAM', pos: [0.45, 2.0, -1.1], look: [0.35, 1.85, 2.6], fov: 50, to: { pos: [0.25, 8.3, 0.25], look: [0.25, 10.3, 0.3], fov: 55 }, dur: 4.5 },
+    { wait: 1.2 },
+    { move: 'rue19', to: 'steps_rue', nowait: true },   // (out of shot below while the camera is on the bell)
+    { wait: 2.2 },
     { do: (c) => seat(c, 'rue19', 'steps_rue', 0.46, 'head_hands') },
-    { shot: 'CAM', pos: [0.25, 8.3, 0.25], look: [0.25, 10.3, 0.3], fov: 55, to: { pos: [0.3, 2.05, 1.3], look: [0.45, 1.0, 4.8], fov: 50 }, dur: 5.5 },
-    { wait: 6.4 },
+    { wait: 1.2 },
+    { shot: 'CAM', pos: [0.25, 8.3, 0.25], look: [0.25, 10.3, 0.3], fov: 55, to: { pos: [0.3, 2.05, 1.3], look: [0.45, 1.0, 4.8], fov: 50 }, dur: 4.5 },
+    { wait: 4 },
     // [WIDE · high above] A tiny figure on the steps of a grey square. Hold two seconds. Fade.
     { shot: 'INSERT', at: 'sky' },
     { wait: 2 },
@@ -314,7 +376,7 @@
   // =================================================================== 2.13 — "Torchlight"
   const MACHINE_DESK = [-20.88, 1.25, 5.62];
   const WALKMAN_COBBLES = [4, 0.018, 11.5];   // dropped on the cobbles, still playing (the torchlight trail, by ear)
-  // Luka's head down (bowed) and slowly back up: 'lift_head' eases the bow off over p.dur
+  // Rue's head bowed, then slowly back up: 'lift_head' eases the bow off over p.dur
   if (!ANIMS.lift_head) {
     ANIMS.lift_head = (r, t, p) => {
       ANIMS.idle(r, t, p);
@@ -343,7 +405,7 @@
     // Rue out on the steps in the rain, head in his hands; his scarf on lamp_4, his Walkman on the cobbles
     tidyRue(c);
     seat(c, 'rue19', 'steps_rue', 0.46, 'head_hands');
-    show(c, 'rue19', 'scarf', false); show(c, 'rue19', 'walkman', false);
+    show(c, 'rue19', 'scarf', false); show(c, 'rue19', 'walkman', false); show(c, 'rue19', 'headphones', false);   // (the headphones went with the Walkman)
     putDown(c, 'walkman', WALKMAN_COBBLES, [0, 0.7, -H]);
     for (const id of ['luka', 'chase']) show(c, id, 'phone', false);
     const s = c.world.torch; if (s) { s.intensity = 0; c.world.torchAuto = true; }
@@ -356,7 +418,15 @@
     s.position.set(-20.95, 1.42, 5.35); s.target.position.set(-22.2, 1.7, 5.35);
     s.color.set(0x8fd0ff); s.angle = 1.25; s.penumbra = 0.8; s.intensity = 9;
   }
-  const LAMPS_OUT = [4, 5, 2, 1, 3, 6, 7, 8].flatMap((n) => [{ prop: 'lamp_' + n, visible: false }, { sfx: 'clunk', vol: 0.45 }, { wait: 0.5 }]);
+  const LAMPS_OUT = [4, 5, 2, 1, 3, 6, 7, 8].flatMap((n) => [{ prop: 'lamp_' + n, visible: false }, { sfx: 'kettle_click', vol: 0.45 }, { wait: 0.5 }]);   // click, click, click
+  function torchOn(c) {   // Luka's phone torch comes on in his hand, white, the machine's glow gone
+    const s = c.world.torch, a = actor(c, 'luka');
+    if (!s || !a) return;
+    const v = new THREE.Vector3(); a.rig.attach.gripR.getWorldPosition(v);
+    c.world.torchAuto = false;
+    s.position.copy(v); s.target.position.set(v.x + Math.sin(a.rotY) * 3, 0.5, v.z + Math.cos(a.rotY) * 3);
+    s.color.set(0xf2f4ff); s.angle = 0.45; s.penumbra = 0.5; s.intensity = 22;
+  }
 
   SCENES['2.13'] = {
     title: 'Torchlight', set: 'square', env: 'night', time: 'Mon 19 Oct 1987, 23:40',
@@ -412,7 +482,16 @@
     { shot: 'CLOSE', on: 'chase', locked: true },
     { expr: [['chase', 'determined']] },
     say('chase', '^Torches on.'),
-    { wait: 0.4 },
+    // (the boys unplug two phones from the machine: their torches)
+    { shot: 'CAM', pos: [-23.7, 1.9, 5.35], look: [-20.95, 1.35, 5.35], fov: 52 },
+    { face: 'luka', to: [MACHINE_DESK[0], MACHINE_DESK[2]], dur: 0.35 }, { face: 'chase', to: [MACHINE_DESK[0], MACHINE_DESK[2]], dur: 0.35 },
+    { act: [['luka', 'give', { dur: 1.1 }], ['chase', 'give', { dur: 1.1 }]] },
+    { wait: 0.55 },
+    { sfx: 'tick', vol: 0.8 },
+    { do: (c) => { for (const id of ['luka', 'chase']) show(c, id, 'phone', true); } },
+    { wait: 0.6 },
+    { sfx: 'tick', vol: 0.8 }, { do: torchOn },
+    { wait: 0.5 },
     { fade: 'out', dur: 0.6 },
     { expr: [['chase', 'neutral']] },
     { do: (c) => { const s = c.world.torch; if (s) { s.intensity = 0; c.world.torchAuto = true; } } },
@@ -500,7 +579,7 @@
     if (r.rig.attach.mug) r.rig.attach.mug.visible = false;
     teapot(c, true);
     for (let i = 0; i < 5 && !c.flow.skipping; i++) {
-      c.world.puff([-14.36 + (i % 2) * 0.12, 1.3, 2.47 + (i % 3) * 0.05], { n: 7, color: 0x7a4a26, speed: 0.45, life: 0.6, gravity: 5 });
+      c.world.puff([-14.66 + (i % 2) * 0.12, 1.3, 2.52 + (i % 3) * 0.05], { n: 7, color: 0x7a4a26, speed: 0.45, life: 0.6, gravity: 5 });
       await c.wait(0.5);
     }
   }
@@ -511,6 +590,9 @@
     const l = P('room_lamp'); if (l && l.userData.on) l.userData.on(true);
     const d = P('door'); if (d) d.userData.open = false;
     const ch = P('desk_chair'); if (ch) ch.rotation.y = H;
+    const m3 = P('mugs3'); if (m3) m3.position.set(-14.62, 1.16, 2.55);   // (at his end of the desk, to pour into)
+    const s = c.world.torch;   // the pendant's warm light over the mess
+    if (s) { c.world.torchAuto = false; s.position.set(-15.6, 2.5, 3.1); s.target.position.set(-15.3, 0.4, 3.0); s.color.set(0xffd9a0); s.angle = 1.25; s.penumbra = 0.9; s.intensity = 5; }
     for (const id of ['luka', 'chase']) show(c, id, 'phone', false);
     tidyRue(c);
     stand(c, 'rue19');
@@ -528,11 +610,11 @@
     { do: (c) => beam(c, [3.9, 0.3, 3.3], [0.45, 0.75, 3.97], 2.2) },
     { face: 'chase', to: 'rue19', dur: 2.2 },
     { wait: 2.6 },
+    snap('torch'),   // (the beam resting on him: the final-YES still)
+    { wait: 0.2 },
     // [TOP-DOWN · directly above Rue] Soaked, head in his hands. The exact frame the game used for Chase in 1.2.
     { shot: 'TOP', on: 'rue19', dist: 1.5, offset: 0.25 },
-    { wait: 1.2 },
-    snap('torch'),
-    { wait: 1.2 },
+    { wait: 2.2 },
     // [INSERT] The torches die. 0%. One lamp over the steps is all that's left.
     { do: (c) => holdUp(c, 'chase', 'phone') },
     { shot: 'INSERT', at: 'chase' },
@@ -543,26 +625,21 @@
     { shot: 'INSERT', at: 'chase', card: ['battery', { pct: 0, bars: 1 }] },
     { wait: 1.8 },
     { do: oneLamp },
+    // (not looking up: head in hands, so from directly above again, under the one lamp)
+    { shot: 'TOP', on: 'rue19', dist: 1.5, offset: 0.25 },
+    { wait: 0.8 },
+    say('rue19', 'Go away.'),
+    // (the one lamp: Rue small and off-centre under it, the boys at the edge of its light; one frame until the gap closes)
     { shot: 'CAM', pos: [-4.7, 1.8, 10.9], look: [-0.4, 1.3, 4.6], fov: 42 },
-    { wait: 2.2 },
-    // (the boys at the edge of its light; Rue under it)
-    { shot: 'MID', on: 'rue19', side: 'ots:chase' },
-    say('rue19', 'Go away.', { tag: 'not looking up' }),
-    { shot: 'CLOSE', on: 'chase' },
     say('chase', 'No.'),
     // (seeing the dead phones)
     { act: [['rue19', 'idle']] }, { expr: [['rue19', 'sad']] },
-    { shot: 'CLOSE', on: 'rue19' },
     { wait: 0.8 },
     { do: (c) => actor(c, 'rue19').eyePos(EYE) },   // (his eye line with his head up: where the crane lands later)
     say('rue19', 'Was that your… You said that was your way home.'),
-    { shot: 'CLOSE', on: 'luka' },
     say('luka', 'Yeah.'),
-    { shot: 'CLOSE', on: 'rue19' },
     say('rue19', 'Why would you do that?'),
-    { shot: 'CLOSE', on: 'luka', locked: true },
     slow('luka', 'Because you were on your own.'),
-    { shot: 'CLOSE', on: 'rue19', locked: true },
     slow('rue19', "I'm always on my own."),
     // [THREE-SHOT · eye level, locked] Chase sits down beside Rue, close. No gap, no phone between them. It's the first time
     // Rue has shared a frame like this. The bars start to rise.
@@ -599,12 +676,11 @@
     { hud: { bars: 3 }, anim: 1.5 },
     { wait: 3.4 },
     slow('rue19', "Why do yous care? I've been awful to you."),
-    { shot: 'CLOSE', on: 'luka', locked: true },
     slow('luka', "Nobody's nobody."),
     // [INSERT] The brick phone in Rue's hands.
     { act: [['chase', 'idle']] },
     { do: (c) => holdUp(c, 'rue19', 'brick') },
-    { shot: 'INSERT', at: 'rue19', card: ['brick', { lit: false }] },
+    { shot: 'INSERT', at: 'rue19' },
     { wait: 0.8 },
     slow('rue19', 'Your call. In thirty-nine years.'),
     say('chase', "Rue, you don't have to—"),
@@ -625,15 +701,15 @@
     // [CRANE · slowly up and away] Three figures on the steps under the bell. The rain thins.
     { act: [['rue19', 'idle']] },
     { do: (c) => show(c, 'rue19', 'brick', true) },
-    { shot: 'CAM', pos: [0.45, 1.25, 7.2], look: [0.45, 1.0, 4.0], fov: 45, to: { pos: [0.9, 12.5, 17.5], look: [0.3, 3.2, 1.6], fov: 45 }, dur: 12 },
-    { env: { rain: 0.25, fog: [0x07080b, 0.035] }, dur: 10 },
-    { wait: 9 },
-    { fade: 'out', dur: 1.6 },
+    { shot: 'CAM', pos: [0.45, 1.25, 7.2], look: [0.45, 1.0, 4.0], fov: 45, to: { pos: [0.9, 12.5, 17.5], look: [0.3, 3.2, 1.6], fov: 45 }, dur: 8 },
+    { env: { rain: 0.25, fog: [0x07080b, 0.035] }, dur: 7 },
+    { wait: 6.4 },
+    { fade: 'out', dur: 1.6 },   // (still rising as it fades)
     { do: (c) => { const s = c.world.torch; if (s) { s.intensity = 0; c.world.torchAuto = true; s.angle = 0.33; s.penumbra = 0.5; s.color.set(0xffffff); } } },
-    { set: 'rooms', env: 'night', spawn: { rue19: [-15.12, 0.4, 2.45, H], luka: [-16.1, 0.4, 4.25, -2.3], chase: [-17.62, 0.4, 2.9, H] } },
+    { set: 'rooms', env: 'night', spawn: { rue19: [-15.05, 0.4, 2.55, H], luka: [-16.1, 0.4, 4.25, -2.3], chase: [-17.62, 0.4, 2.9, H] } },
     { do: room213 },
     // [CLOSE · three mismatched mugs on Rue's desk] Rue pours tea for someone else for the first time. He's bad at it.
-    { shot: 'CAM', pos: [-15.45, 1.95, 2.9], look: [-14.3, 1.15, 2.5], fov: 44 },
+    { shot: 'CAM', pos: [-13.95, 1.52, 2.05], look: [-14.62, 1.24, 2.6], fov: 40 },
     { fade: 'in', dur: 0.8 },
     { do: pour },
     { wait: 0.8 },
@@ -646,6 +722,10 @@
     { fade: 'out', dur: 1.2 },
     { music: null, fade: 2 },
     { title: 'END OF ACT TWO', dur: 3.5 },
-    { do: (c) => { tidyRue(c); for (const id of ['luka', 'chase']) show(c, id, 'phone', false); } },
+    { do: (c) => {
+      tidyRue(c); for (const id of ['luka', 'chase']) show(c, id, 'phone', false);
+      const m3 = c.world.prop('mugs3'); if (m3) m3.position.set(-14.3, 1.16, 2.5);
+      const s = c.world.torch; if (s) { s.intensity = 0; s.angle = 0.33; s.penumbra = 0.5; s.color.set(0xffffff); } c.world.torchAuto = true;
+    } },
   ];
 })();
