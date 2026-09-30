@@ -428,11 +428,27 @@
     ch.place([2.3, 0, 7.4, 2.78]); lu.place([3.25, 0, 7.85, -2.5]);
     for (const id of ['luka', 'chase']) show(c, id, 'phone', true);
     pickUp('walkman');
-    c.world.torchAuto = true;
-    const s = c.world.torch; if (s) { s.color.set(0xf2f4ff); s.angle = 0.3; s.penumbra = 0.55; s.intensity = 16; }
   }
+  // the torch in Chase's hand, its spot sliding from `from` to `to` (and staying there)
+  let BEAM = null;
+  function beam(c, from, to, dur) {
+    const s = c.world.torch, a = actor(c, 'chase');
+    if (!s || !a) return;
+    c.world.torchAuto = false; s.color.set(0xf2f4ff); s.angle = 0.4; s.penumbra = 0.5; s.intensity = 34;
+    let t = c.flow.skipping ? 1 : 0;
+    beamOff();
+    BEAM = (dt) => {
+      t = Math.min(1, t + dt / dur); const k = t * t * (3 - 2 * t), fx = Math.sin(a.rotY), fz = Math.cos(a.rotY);
+      s.position.set(a.pos.x + fx * 0.3 - fz * 0.18, a.pos.y + 1.2, a.pos.z + fz * 0.3 + fx * 0.18);
+      s.target.position.set(from[0] + (to[0] - from[0]) * k, from[1] + (to[1] - from[1]) * k, from[2] + (to[2] - from[2]) * k);
+      if (c.flow.sceneId !== '2.13') beamOff();
+    };
+    addUpdate(BEAM);
+  }
+  function beamOff() { if (BEAM) { removeUpdate(BEAM); BEAM = null; } }
   async function torchesDie(c) {   // the phone in his hands: its light gutters on his hands and goes out
     const s = c.world.torch, a = actor(c, 'chase');
+    beamOff();
     if (!s || !a) return;
     const v = new THREE.Vector3(); a.eyePos(v);
     c.world.torchAuto = false;
@@ -507,9 +523,11 @@
     { do: findSetup },
     // [WIDE] The torch beam sweeps the Campanile steps and stops.
     { shot: 'CAM', pos: [5.3, 2.2, 11.7], look: [0.7, 0.6, 4.3], fov: 44 },
+    { do: (c) => beam(c, [3.9, 0.3, 3.3], [3.9, 0.3, 3.3], 0.1) },
     { wait: 0.6 },
-    { face: 'chase', to: 'rue19', dur: 2 },
-    { wait: 2.4 },
+    { do: (c) => beam(c, [3.9, 0.3, 3.3], [0.45, 0.75, 3.97], 2.2) },
+    { face: 'chase', to: 'rue19', dur: 2.2 },
+    { wait: 2.6 },
     // [TOP-DOWN · directly above Rue] Soaked, head in his hands. The exact frame the game used for Chase in 1.2.
     { shot: 'TOP', on: 'rue19', dist: 1.5, offset: 0.25 },
     { wait: 1.2 },
@@ -615,7 +633,7 @@
     { set: 'rooms', env: 'night', spawn: { rue19: [-15.12, 0.4, 2.45, H], luka: [-16.1, 0.4, 4.25, -2.3], chase: [-17.62, 0.4, 2.9, H] } },
     { do: room213 },
     // [CLOSE · three mismatched mugs on Rue's desk] Rue pours tea for someone else for the first time. He's bad at it.
-    { shot: 'CAM', pos: [-13.7, 1.65, 1.75], look: [-14.35, 1.2, 2.5], fov: 42 },
+    { shot: 'CAM', pos: [-15.45, 1.95, 2.9], look: [-14.3, 1.15, 2.5], fov: 44 },
     { fade: 'in', dur: 0.8 },
     { do: pour },
     { wait: 0.8 },

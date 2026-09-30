@@ -13,7 +13,7 @@ MINIGAMES.torchlight = (() => {
   const CUM = [0];
   for (let i = 1; i < WAY.length; i++) CUM.push(CUM[i - 1] + Math.hypot(WAY[i][0] - WAY[i - 1][0], WAY[i][1] - WAY[i - 1][1]));
   const LEN = CUM[CUM.length - 1], SCARF = [10, 9], RUE = [0.45, 3.97];
-  const FOLLOW = { dist: 2.0, height: 1.6, lag: 0.3, fov: 55 }, BEAM = 16;
+  const FOLLOW = { dist: 2.3, height: 2.05, lag: 0.3, fov: 55 }, BEAM = 34;
   const BARKS = [['luka', 'Rue!'], ['chase', "Rue! It's Other Australia!"], ['luka', "Mate, it's cold, come on."]];
   let api, tok = 0, done = true, on = true, B = 4, gotW = false, gotS = false, barkT = 0, bi = 0, talking = false, loop = null, wm = null, W = [4, 0, 11.5];
 
@@ -26,6 +26,11 @@ MINIGAMES.torchlight = (() => {
       if (d < best) { best = d; s = CUM[i] + u * (CUM[i + 1] - CUM[i]); }
     }
     return s;
+  }
+  function aim(a, s) {   // the beam from the right hand onto the cobbles a few metres ahead (world.torchAuto aims too far for the fog)
+    const fx = Math.sin(a.rotY), fz = Math.cos(a.rotY);
+    s.position.set(a.pos.x + fx * 0.3 - fz * 0.18, a.pos.y + 1.2, a.pos.z + fz * 0.3 + fx * 0.18);
+    s.target.position.set(a.pos.x + fx * 4.6, a.pos.y + 0.05, a.pos.z + fz * 4.6);
   }
   const prompt = () => ui.prompt(on ? 'NO — Torch off' : 'NO — Torch on');
   function swap() {
@@ -54,7 +59,7 @@ MINIGAMES.torchlight = (() => {
       if (fo) fo.place([WAY[0][0] - 0.9, 0, WAY[0][1] - 0.45, Math.PI / 2]);
       state.active = act; player.control(act); player.follower(other); flow.follow = other;
       const s = Wd.torch;
-      if (s) { Wd.torchAuto = true; s.color.set(0xf2f4ff); s.angle = 0.3; s.penumbra = 0.55; s.intensity = BEAM; }
+      if (s) { Wd.torchAuto = false; s.color.set(0xf2f4ff); s.angle = 0.42; s.penumbra = 0.5; s.intensity = BEAM; if (me) aim(me, s); }
       wm = Wd.scene && Wd.scene.getObjectByName('rue_walkman');
       loop = a.AUDIO && a.AUDIO.loop ? a.AUDIO.loop('walkman', { at: W, vol: 3, fade: 1.5 }) : null;
       a.cam.override('follow', FOLLOW);
@@ -73,7 +78,7 @@ MINIGAMES.torchlight = (() => {
       const x = a.pos.x, z = a.pos.z, rem = Math.max(0, LEN - along(x, z));
       if (on) B -= B / Math.max(rem / CONFIG.walk, 20) * dt;
       const s = api.world.torch;
-      if (s) s.intensity = on ? BEAM * (B < 1.3 ? 0.75 + 0.25 * Math.random() : 1) : 0;   // it gutters near the end
+      if (s) { s.intensity = on ? BEAM * (B < 1.3 ? 0.75 + 0.25 * Math.random() : 1) : 0; aim(a, s); }   // it gutters near the end
       const n = Math.max(1, Math.ceil(B - 1e-6));
       if (n !== state.battery) api.hud.set({ battery: n });
       // the trail: the Walkman (you hear it), the scarf (you see it)
