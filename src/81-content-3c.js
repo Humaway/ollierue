@@ -295,16 +295,15 @@
     const f = c.world.prop('window_flash'), m = f && f.children[0] && f.children[0].material;
     c.sfx('flash_hum', { vol: 0.25, lp: 900 });
     if (!f) return;
-    f.visible = true;
     if (options.reduceFlashing && m && !c.flow.skipping) {   // the set's shared material: only uniforms change, restored after
-      m.color.setScalar(0);
+      m.color.setScalar(0); m.emissiveIntensity = 0; f.visible = true;
       await new Promise((res) => {
         let t = 0;
         const u = (dt) => { t += dt; const k = Math.min(1, t / 1.2); m.emissiveIntensity = 0.35 * Math.sin(k * PI); if (k >= 1) { removeUpdate(u); res(); } };
         addUpdate(u);
       });
       m.color.setScalar(1); m.emissiveIntensity = 1;
-    } else await c.wait(0.3);
+    } else { f.visible = true; await c.wait(0.3); }
     f.visible = false;
   }
 
