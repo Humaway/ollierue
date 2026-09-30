@@ -128,9 +128,9 @@
       ['steps', [
         { face: 'des', to: 'luka' },
         { say: 'des', text: "Stick it in the cupboard. Nobody opens the cupboard. I don't open the cupboard." },
+        { do: (c) => { const d = c.world.actor('des'); if (d) { d.place('lodge_des_chair'); d.play('sit'); } } },
         { move: 'luka', to: [-21.62, 0.46, 5.95, H] },
         { hold: 'luka', prop: 'machine' },
-        { do: (c) => { const d = c.world.actor('des'); if (d) { d.place('lodge_des_chair'); d.play('sit'); } } },
       ]],
       ['control', 'luka'],
       ['follow', 'chase'],
