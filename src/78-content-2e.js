@@ -59,9 +59,9 @@
 
   // =================================================================== 2.11 — "The Phone That Never Rings"
   const CHASE_STEP = [-1.0, 0, 3.97, 0];
-  const STONE = [-0.28, 0.63, 3.8], WALKMAN_STONE = [-0.1, 0.478, 3.7];   // the brick phone upright on the stone between them; the Walkman flat beside it
-  // [TWO-SHOT · side-on] the two of them on the step from the side (~60° off their facing), the phone standing between them
-  const SIDE = { pos: [3.25, 1.05, 5.95], look: [-0.3, 0.78, 3.95] };
+  const STONE = [-0.4, 0.63, 3.8], WALKMAN_STONE = [-0.62, 0.478, 3.72];   // the brick phone upright on the stone between them; the Walkman flat beside it
+  // [TWO-SHOT · side-on] the two of them on the step from the side (~50° off their facing), the phone standing between them
+  const SIDE = { pos: [2.9, 1.35, 6.6], look: [-0.3, 0.7, 3.95] };
   const TWO_SIDE = { shot: 'CAM', pos: SIDE.pos, look: SIDE.look, fov: 38 };
   const nearRue = () => { const a = world.actor('chase'), r = world.actor('rue19'); return !!a && !!r && Math.hypot(a.pos.x - r.pos.x, a.pos.z - r.pos.z) < 8.5; };
   // (the roam) Chase walks toward a voice: Rue's "call", wordless, his mouth going, carrying across the square
@@ -197,16 +197,16 @@
     const k = ++ringing;
     while (k === ringing && !c.flow.skipping && c.flow.sceneId === '2.12') { c.sfx('brick_ring', { vol: 0.9 }); await c.wait(3); }
   }
-  // his overcoat over the back of his chair (he walks out into the rain without it); taken away under the fade at the end
+  // his grey overcoat over the back of the empty chair beside him (he walks out into the rain without it); gone under the fade
   let COAT = null;
   function coat(c, on) {
     if (!COAT) {
-      const b = new Builder(), m = mat(0x86683f), d = mat(0x5e4527);
+      const b = new Builder(), m = mat(0x62666c), d = mat(0x44474d);
       b.box(0.44, 0.52, 0.05, m, [0, 0.66, -0.225]); b.box(0.43, 0.05, 0.1, m, [0, 0.915, -0.19]);   // hanging down the back, folded over the rail
       b.box(0.4, 0.08, 0.055, d, [0, 0.88, -0.235]); b.box(0.07, 0.42, 0.04, m, [0.2, 0.6, -0.2]);    // collar; a sleeve down the side
       COAT = b.done(); COAT.name = 'rue_coat';
     }
-    if (on) { c.world.scene.add(COAT); COAT.position.set(5.9, 0, -4.1); } else if (COAT.parent) COAT.parent.remove(COAT);
+    if (on) { c.world.scene.add(COAT); COAT.position.set(6.7, 0, -4.1); } else if (COAT.parent) COAT.parent.remove(COAT);
   }
   // one student near the TV reads the prices aloud, horrified: wordless, pointing at the screen
   async function readAloud(c) {
@@ -237,7 +237,7 @@
     await at('Thank you'); f.mouth('smile');
   }
   // 'set_down': the brick phone from his ear, slowly, down flat on the table by his hand (the 'tap' reach, the hand turned
-  // flat, a lean), let go (the rig's brick hides at u 0.64: content lays the table copy there), then the hand back
+  // flat, a lean), held there a moment (content swaps the rig's brick for the table copy), then the hand back
   const SET_DOWN = [5.83, 0.777, -3.65], SET_ROT = [0, 2.28, -H], SET_T = 3.6;   // where that lands; its display up
   if (!ANIMS.set_down) {
     const N = ['torso', 'head', 'armR', 'foreR', 'handR'], R0 = N.map(() => new THREE.Quaternion()), PH = N.map(() => new THREE.Quaternion()),
@@ -251,7 +251,6 @@
       ANIMS.tap(r, 0, p); P.handR.rotation.set(0, 1, 0); P.torso.rotation.x += 0.2; P.head.rotation.x += 0.3; grab(P, D);
       const [A, B, k] = u < 0.6 ? [PH, D, sm(u / 0.6)] : u < 0.75 ? [D, D, 1] : [D, R0, sm((u - 0.75) / 0.25)];
       for (let i = 0; i < N.length; i++) { const o = P[N[i]].rotation; q.copy(A[i]).slerp(B[i], k); o.setFromQuaternion(q, o.order); }
-      if (r.attach.brick) r.attach.brick.visible = u < 0.64;
     };
     ANIMS.set_down.upper = true; ANIMS.set_down.shows = 'brick';
   }
@@ -259,8 +258,9 @@
     const r = actor(c, 'rue19'), b = r && r.rig.attach.brick;
     if (!b) return;
     r.play('set_down');
-    if (!c.flow.skipping) await waitUntil(() => c.flow.skipping || r.anim !== 'set_down' || !b.visible);
+    if (!c.flow.skipping) await waitUntil(() => c.flow.skipping || r.anim !== 'set_down' || r.poseT >= 0.66 * SET_T);   // (in the hold)
     const g = putDown(c, 'brick', SET_DOWN, SET_ROT);
+    b.visible = false;
     if (!g || c.flow.skipping || r.anim !== 'set_down') return;
     b.updateMatrixWorld(true);   // exactly where his hand left it
     b.getWorldQuaternion(g.quaternion); b.getWorldScale(g.scale);
@@ -545,7 +545,7 @@
     s.color.set(0xffc986); s.angle = 0.95; s.penumbra = 0.7; s.intensity = 14;
     c.world.env({ hemi: [0x3a4660, 0x0c0c10, 0.32] }, 0.6);   // (a little fill from the wet stone)
     for (const id of ['luka', 'chase']) stand(c, id);
-    actor(c, 'chase').place([-0.3, 0, 5.45, PI - 0.15]); actor(c, 'luka').place([1.45, 0, 5.6, -2.7]);
+    actor(c, 'chase').place([-1.35, 0, 5.3, 2.21]); actor(c, 'luka').place([1.6, 0, 5.5, -2.44]);   // (either side of him, a gap each)
   }
   const THREE_SHOT = { shot: 'CAM', pos: [0.45, 1.2, 7.7], look: [0.45, 1.0, 4.0], fov: 42 };   // THREE-SHOT, eye level, locked (the crane at the end starts here)
   const SEATS = [['chase', [-0.08, 0, 3.97, 0]], ['luka', [1.02, 0, 3.97, 0]]];
@@ -630,7 +630,7 @@
     { wait: 0.8 },
     say('rue19', 'Go away.'),
     // (the one lamp: Rue small and off-centre under it, the boys at the edge of its light; one frame until the gap closes)
-    { shot: 'CAM', pos: [-4.7, 1.8, 10.9], look: [-0.4, 1.3, 4.6], fov: 42 },
+    { shot: 'CAM', pos: [-4.7, 1.8, 10.9], look: [-1.1, 1.2, 4.9], fov: 42 },
     say('chase', 'No.'),
     // (seeing the dead phones)
     { act: [['rue19', 'idle']] }, { expr: [['rue19', 'sad']] },
@@ -680,7 +680,7 @@
     // [INSERT] The brick phone in Rue's hands.
     { act: [['chase', 'idle']] },
     { do: (c) => holdUp(c, 'rue19', 'brick') },
-    { shot: 'INSERT', at: 'rue19' },
+    { shot: 'INSERT', at: 'rue19', dist: 1.0 },
     { wait: 0.8 },
     slow('rue19', 'Your call. In thirty-nine years.'),
     say('chase', "Rue, you don't have to—"),
