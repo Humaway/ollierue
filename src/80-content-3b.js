@@ -360,10 +360,10 @@
   const WAVERS = [['Mick', 'mick', [8.8, 0, 5.2, -0.6]], ['Nuala', 'nuala', [3.6, 0, 5.0, 0]], ['Siobhán', 'siobhan', [-2.2, 0, 4.9, 0.2]],
     ['Ronan', 'ronan', [-6.8, 0, 4.1, 0.4]], ['Fiachra', 'fiachra', [-11.2, 0, 2.0, 0.6]], ['Hartigan', 'hartigan', [-15.4, 0, -0.9, 0.9]]];
   // The lodge: Rue in the middle with the brick phone, Des, Bernie and Declan in the doorway, the machine wired to Des's phone.
-  const RUE = [-22.05, 0.46, 4.0, 0.15], LUKA = [-22.12, 0.46, 4.66, PI], CHASE = [-22.95, 0.46, 4.55, 2.1], LUKA_BACK = [-22.7, 0.46, 5.1, 2.6];
+  const RUE = [-22.05, 0.46, 4.0, 0.15], LUKA = [-22.15, 0.46, 4.95, PI], LUKA_ON = [-22.12, 0.46, 4.66, PI], CHASE = [-22.95, 0.46, 4.55, 2.1], LUKA_BACK = [-22.7, 0.46, 5.1, 2.6];
   const MACHINE = [-20.92, 1.25, 5.5], CHASE_M = [-21.3, 0.46, 5.98, 2.5], LUKA_M = [-21.24, 0.46, 5.0, 0.6];
   const DOOR_GROUP = { des: [-21.3, 0.46, 2.72, -0.35], bernie: [-21.85, 0.46, 3.22, -0.15], declan: [-21.08, 0.46, 3.45, -0.55] };
-  const LODGE_WIDE = { shot: 'CAM', pos: [-25.1, 2.75, 6.9], look: [-21.7, 1.1, 3.7], fov: 58 };
+  const LODGE_WIDE = { shot: 'CAM', pos: [-24.85, 2.7, 3.3], look: [-21.6, 1.2, 5.3], fov: 60 };
   const OVERCAST = Object.assign({}, SETS.square.env.sunday, { rain: 0 });   // the rain has stopped; the sun isn't out yet
   const BELL = { vol: 0.55 };
 
@@ -418,8 +418,8 @@
   // the Walkman tape into Des's bin
   function binDrop(c) {
     const t = prop(c, 'winning');
-    t.position.set(-21.5, 1.3, 4.45); t.rotation.set(0.4, 0.8, 0.2);
-    tween(c, 0.55, (k) => { t.position.y = 1.3 - 0.55 * k * k; t.rotation.x = 0.4 + 1.2 * k; });
+    t.position.set(-21.52, 1.35, 4.45); t.rotation.set(0.4, 0.8, 0.2);
+    tween(c, 0.5, (k) => { t.position.y = 1.35 - 0.47 * k * k; t.rotation.x = 0.4 + 1.1 * k; });   // lands on the rubbish in the bin
   }
 
   SCENES['3.4'] = {
@@ -474,13 +474,13 @@
     say('luka', 'Always.'),
     { face: 'luka', to: 'rue19' },
     // [CLOSE · Luka's hands] He takes off his lanyard and holds it for a second.
-    { shot: 'INSERT', at: 'luka' },
+    { shot: 'CAM', pos: [-22.88, 2.15, 4.4], look: [-22.15, 1.62, 4.62], fov: 42 },
     { wait: 0.3 },
     { do: lanyardOff },
     { wait: 2.6 },
     // [MID · from behind Rue, Luka facing camera, slightly from below] He puts it over Rue's head.
     { shot: 'CAM', pos: [-22.42, 1.78, 3.3], look: [-22.12, 2.06, 4.66], fov: 44 },
-    { wait: 0.3 },
+    { move: 'luka', to: LUKA_ON },
     { do: lanyardOn },
     { wait: 2.2 },
     { act: [['luka', 'idle']] }, { flag: 'lanyard_given' },
@@ -510,8 +510,8 @@
     { act: [['rue19', 'tap']] },
     { shot: 'INSERT', at: 'rue19', card: ['tape', { text: 'Winning Is a Decision' }] },
     { sfx: 'cassette_eject' }, { wait: 1.4 },
-    { shot: 'INSERT', at: [-21.5, 0.78, 4.45], from: [-21.05, 1.55, 4.95], fov: 40 },
-    { do: binDrop }, { wait: 0.55 }, { sfx: 'thud', vol: 0.35 }, { wait: 0.8 },
+    { shot: 'INSERT', at: [-21.5, 0.8, 4.45], from: [-21.95, 1.45, 5.1], fov: 45 },
+    { wait: 0.3 }, { do: binDrop }, { wait: 0.5 }, { sfx: 'thud', vol: 0.35 }, { wait: 0.9 },
     { shot: 'INSERT', at: 'rue19', card: ['label', { text: 'PUDDING' }] },
     { sfx: 'clunk', vol: 0.6 }, { wait: 1.2 },
     { do: (c) => drop(c, 'rue19') }, { act: [['rue19', 'idle']] },
@@ -523,7 +523,7 @@
     { shot: 'CAM', pos: [-21.72, 2.1, 5.5], look: [-22.0, 2.0, 4.0], fov: 46 },
     slow('rue19', 'So. Whatever I end up doing. A company, whatever it is. I don\'t want it full of people like me. ^ I want it full of people like yous. People who\'d burn their way home to find some eejit under a bell tower.'),
     // [CLOSE · Chase]
-    { shot: 'CLOSE', on: 'chase' },
+    { shot: 'CAM', pos: [-22.55, 2.05, 3.72], look: [-22.95, 2.1, 4.55], fov: 40 },
     say('chase', 'Then opt us in.'),
     say('rue19', 'What?'),
     say('luka', 'Future thing. When you sign someone up, you ask if they want to opt in.'),
@@ -534,7 +534,7 @@
     { do: (c) => { const a = actor(c, 'rue19'); if (a) { a.setExpr('neutral'); a.rig.face.mouth('smile'); } } },   // the first real smile he's had all game
     slow('rue19', '…I like the sound of that.'),
     // [TWO-SHOT · locked] A stare, 2 seconds. Luka and Chase turn to each other. Behind them, Des sips his tea.
-    { shot: 'CAM', pos: [-24.05, 2.02, 5.75], look: [-22.2, 1.55, 3.6], fov: 50 },
+    { shot: 'CAM', pos: [-24.8, 2.0, 5.7], look: [-22.6, 1.85, 4.55], fov: 42 },
     { face: 'luka', to: 'chase' }, { face: 'chase', to: 'luka' },
     { act: [['des', 'drink']] },
     { stare: 2 },
@@ -545,7 +545,7 @@
     { move: 'chase', to: CHASE_M, nowait: true }, { move: 'luka', to: LUKA_M },
     { face: 'chase', to: [MACHINE[0], MACHINE[2]] }, { face: 'luka', to: [MACHINE[0], MACHINE[2]] },
     { act: [['chase', 'type']] },
-    { shot: 'MID', on: 'chase' },
+    { shot: 'CAM', pos: [-22.4, 2.0, 6.7], look: [-21.1, 1.35, 5.5], fov: 50 },
     { wait: 0.6 },
   ];
 
@@ -557,10 +557,10 @@
     { wait: 2.6 },
     // [TWO-SHOT · tight, their hands side by side on the machine]
     { act: [['luka', 'type'], ['chase', 'type']] },
+    { popup: null, clear: true },
     { shot: 'CAM', pos: [-22.05, 2.2, 5.46], look: [-20.95, 1.3, 5.48], fov: 40 },
     say('luka', 'Together?'),
     say('chase', 'Together.'),
-    { popup: null, clear: true },
   ];
 
   CUTSCENES['3.4_ring'] = [
