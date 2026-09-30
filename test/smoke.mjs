@@ -1,6 +1,6 @@
 // Headless playthrough. Usage:
-//   node test/smoke.mjs [--scene 1.1] [--stop PC] [--speed 8] [--shots 2] [--timeout 600] [--manual] [--file games/rue.html] [--out test/out]
-// --manual: no autoplay (just boot to title). --shots N: screenshot every N seconds into test/out/.
+//   node test/smoke.mjs [--scene 1.1] [--stop PC] [--speed 8] [--shots 2] [--timeout 600] [--manual] [--fast] [--file games/rue.html] [--out test/out]
+// --manual: no autoplay (just boot to title). --fast: every cutscene runs as if skipped. --shots N: screenshot every N seconds into test/out/.
 // Serves three.js from node_modules because the CDN is unreachable from CI sandboxes.
 import { chromium } from 'playwright';
 import { mkdirSync } from 'fs';
@@ -26,6 +26,7 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + 
 
 const q = new URLSearchParams();
 if (!manual) q.set('autoplay', '1');
+if (process.argv.includes('--fast')) q.set('fast', '1');
 if (scene) q.set('scene', scene);
 if (stop) q.set('stop', stop);
 q.set('speed', speed);

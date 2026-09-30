@@ -93,6 +93,7 @@ const { flow, hotspots, inventory, runSteps, playCutscene } = (() => {
     if (typeof c === 'string') testLog('cutscene ' + c);
     const g = G, lb = o.letterbox !== false;
     cutDepth++;
+    if (TEST.fast) flow.skipping = true; // test mode: every cutscene runs as if skipped
     player.enabled = false; ui.prompt(null); hotspots.reset();
     if (lb) ui.letterbox(true);
     await runSteps(steps);

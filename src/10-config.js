@@ -128,10 +128,11 @@ const options = {
 const profile = { completed: false, seenPrologue: false };
 
 // ------------------------------------------------------------ test hooks
-// ?autoplay=1 auto-advances everything; &scene=2.3 starts there; &stop=2.5 ends after it; &speed=8.
+// ?autoplay=1 auto-advances everything; &scene=2.3 starts there; &stop=2.5 ends after it; &speed=8;
+// &fast=1 runs every cutscene as if skipped (state steps still apply).
 const TEST = (() => {
   const q = new URLSearchParams(location.search);
-  return { auto: q.has('autoplay'), scene: q.get('scene'), stop: q.get('stop'), speed: +(q.get('speed') || 1) };
+  return { auto: q.has('autoplay'), scene: q.get('scene'), stop: q.get('stop'), speed: +(q.get('speed') || 1), fast: q.has('fast') };
 })();
 window.RUE_TEST = { ready: false, done: false, scene: null, step: null, log: [] };
 const testLog = (msg) => { if (TEST.auto) RUE_TEST.log.push(msg); };
