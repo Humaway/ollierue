@@ -74,9 +74,12 @@
       removeUpdate(u); watching = false;
       lanyardHome(false);
       if (LY.rig) LY.rig.attach.textbook && LY.rig.attach.textbook.scale.setScalar(1);
-      const ph = world.prop('brick_phone'), pol = world.prop('polaroid');
+      rueLanyard(null, false);
+      world.liveMax = 2;
+      const ph = world.prop('brick_phone'), pol = world.prop('polaroid'), b = world.prop('bell');
       if (ph) { ph.visible = true; ph.userData.ring = false; }
       if (pol) pol.visible = true;
+      if (b) b.userData.ring = false;
     };
     addUpdate(u);
   }
@@ -121,13 +124,25 @@
   const SAME = (id) => ({ shot: 'CLOSE', on: id, angle: 'low' });
   // Rue at his desk: the same lens by hand (0.8 m out and 0.37 m under his eyes; a computed close swings off the desk)
   const SAME_DESK = { shot: 'CAM', pos: [0.1, 1.0, -1.5], look: [0, 1.33, -2.32], fov: 40 };
-  const BRICK_ECU = { shot: 'CAM', pos: [0.72, 0.96, -1.08], look: [0.78, 0.87, -1.56], fov: 30 };   // the Prologue's ECU
+  // As in 3.4, Rue under the bell wears Luka's lanyard: a copy of Luka's mesh fitted to him the way 3.4 fits it
+  // (Luka stays on the live store set meanwhile); taken off again back in the store.
+  const RL = { m: null };
+  function rueLanyard(c, on) {
+    if (RL.m) { RL.m.removeFromParent(); RL.m = null; }
+    const l = on && actor(c, 'luka'), r = on && actor(c, 'rue19'), src = l && l.rig.attach.lanyard;
+    if (!r || !src) return;
+    const dl = l.rig.d, dr = r.rig.d, m = RL.m = src.clone();
+    m.position.set(0, dr.T - dl.T, 0); m.rotation.set(0, 0, 0); m.visible = true;
+    m.scale.set(dr.nr / dl.nr, 1, (dr.chestZ || 0.12) / (dl.chestZ || 0.12));
+    r.rig.parts.torso.add(m);
+  }
   function squareUp(c) {
     if (c.AUDIO && c.AUDIO.ambience) c.AUDIO.ambience({ rain: false, loops: [] });   // the first sun in three weeks
     const b = c.world.prop('bell'); if (b) b.userData.ring = true;
     if (!c.flow.skipping) c.sfx('bell', { vol: 0.6 });
     const r = actor(c, 'rue19');
     if (!r) return;
+    rueLanyard(c, true);
     r.face(2.2, 0); r.play('look_up');
     r.rig.face.eyes('closed'); r.rig.face.mouth('smile');
   }
@@ -159,15 +174,21 @@
   // back in the store, under the cut: the boys shoulder to shoulder at Chase's monitor, rain on the glass
   function storeBack(c) {
     if (c.AUDIO && c.AUDIO.ambience) c.AUDIO.ambience({ rain: true, loops: ['aircon', 'fluoro'] });
-    const ph = c.world.prop('brick_phone'), pol = c.world.prop('polaroid');   // (the office is still live: leave its desk as found)
+    rueLanyard(c, false);
+    const ph = c.world.prop('brick_phone'), pol = c.world.prop('polaroid'), b = c.world.prop('bell');   // (the office and the square are still live: leave them as found)
     if (ph) { ph.visible = true; ph.userData.ring = false; }
     if (pol) pol.visible = true;
+    if (b) b.userData.ring = false;
     const m = c.world.prop('monitor_screen'); if (m) m.userData.show('app');
     for (const id of ['chase', 'luka']) { const a = actor(c, id); if (a) { a.play('idle'); a.setExpr('neutral'); } }
   }
   // [JARVIS-CAM] "JARVIS has encountered an error. Would you like to restart? [YES] [NO]" — the cursor hovers, then clicks YES.
   async function restartClick(c) {
-    const p = c.popup({ msg: 'JARVIS has encountered an error. Would you like to restart?', icon: 'error', buttons: ['YES', 'NO'], at: 'center', shake: true });
+    // it lands on the boys' faces: between their two heads, as the lens sees them
+    const a = actor(c, 'chase'), b = actor(c, 'luka'), v = new THREE.Vector3(), w = new THREE.Vector3();
+    let at = { actor: 'chase' };
+    if (a && b) { const s = c.cam.project(a.headPos(v).add(b.headPos(w)).multiplyScalar(0.5)); at = [Math.min(0.9, Math.max(0.1, s.x / innerWidth)), Math.min(0.9, Math.max(0.1, s.y / innerHeight))]; }
+    const p = c.popup({ msg: 'JARVIS has encountered an error. Would you like to restart?', icon: 'error', buttons: ['YES', 'NO'], at, shake: true });
     if (c.flow.skipping) { p.close(); return; }
     const yes = p.el.querySelector('.jv-b');
     const cur = document.createElement('div');
@@ -245,7 +266,8 @@
 
   function dressE(c) {
     watch();
-    c.world.preload('square');                                // under the black: the first match cut is a cut, not a load
+    c.world.liveMax = 3;                                      // under the black: the match cuts are cuts, not loads
+    c.world.preload('square'); c.world.preload('office');
     const P = (n) => c.world.prop(n);
     for (const n of ['parcel', 'margaret_phone']) { const o = P(n); if (o) o.visible = false; }
     const m = P('monitor_screen'); if (m) m.userData.show('app');
@@ -370,22 +392,15 @@
     { set: 'square', env: 'sun', spawn: { rue19: 'under_bell' } },
     { do: squareUp },
     SAME('rue19'),
-    { wait: 0.3 },
-    { do: (c) => c.world.preload('office') },                          // behind the held shot (the store goes; it comes back later)
-    { wait: 2.4 },
+    { wait: 2.7 },
     // [MATCH CUT · Rue's office, 2026] The same angle again. On his desk the brick phone rings, a third time.
     // He smiles the same smile and answers.
     { set: 'office', env: 'day', spawn: { rue58: 'rue_desk' } },
     { do: officeUp },
     SAME_DESK,
-    { wait: 0.3 },
-    { do: (c) => c.world.preload('reddy') },
-    { wait: 0.5 },
+    { wait: 0.8 },
     { do: ringThird },
-    { wait: 0.7 },
-    BRICK_ECU,                                                         // (the phone on the desk, as in the Prologue and 3.5)
-    { wait: 1.3 },
-    SAME_DESK,
+    { wait: 1.8 },                                                     // (two rings on his face)
     { do: smileUp },
     { wait: 0.7 },
     { do: answer },
@@ -413,6 +428,10 @@
     steps: [['minigame', 'credits', {}]],
     grants: {},
   };
+  // Scene select (§16: "items, flags, names, samples and battery"): the Samples each scene offers, so C picked from
+  // the list plays the song on them, not all bleeps. Grants apply only in select mode; a scene's own list wins.
+  for (const [id, s] of [['2.6', ['kettle', 'rain', 'till', 'beep', 'dynamo']], ['2.7', ['trill']], ['2.10', ['whistle', 'bell']]])
+    if (SCENES[id]) (SCENES[id].grants ||= {}).samples ||= s;
 
   // =================================================================== POST-CREDITS — "The Original Spec"
   // "He points at the frame without looking": the rig's point is straight ahead, so for this one gesture his upper body
@@ -471,7 +490,8 @@
     { shot: 'INSERT', at: 'plaque', card: ['plaque', { text: 'THE ORIGINAL SPEC' }] },
     { wait: 2.4 },
     // [MID · an older man at a desk, back to camera] He doesn't turn around. (2.8: Rue at his desk won't turn round.)
-    { shot: 'INSERT', at: 'declan_back' },
+    // 2.8's `rue_back` setup: straight behind him on his facing axis, the lens just over his head, fov 35; MID distance.
+    { shot: 'CAM', pos: [O(1.0), 1.4, -0.7], look: [O(2.78), 1.3, -0.7], fov: 35 },
     { wait: 1.2 },
     say('young_dev', 'Declan? Optus are on the line again. They want to know if we can fix the pop-ups.'),
     say('declan58', "Fix them? That's in the spec."),              // (58, not turning round)
@@ -487,9 +507,7 @@
     { shot: 'JARVIS', at: 'monitor', on: 'declan58' },
     { wait: 1.0 },
     { popup: { msg: 'JARVIS has stopped responding.', icon: 'error', buttons: [], at: { actor: 'declan58' }, shake: true } },
-    { wait: 1.2 },
-    face('declan58', (f) => f.mouth('smile')),
-    { wait: 1.6 },
+    { wait: 2.0 },                                                     // (his typing face, neutral, under it)
     // END. (The flow marks the game completed and returns to the title: Chapter Select and Extras unlock.)
     { fade: 'out', dur: 1.2 },
     { popup: null, clear: true },

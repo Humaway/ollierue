@@ -24,12 +24,25 @@
     };
     addUpdate(f);
   }
-  // play an anim, then hide whatever prop it shows (the 'reading' book, the 'drink' mug, the 'phone' brick)
-  function playBare(c, id, anim, o, hide) {
+  // The same poses without the prop the art shows with them (the 'reading' book, the 'drink' mug, the 'phone' brick):
+  // the kit's own prop, or nothing, is in the hand. Plus Rue's own: the handset kept at his ear while his other hand goes
+  // to his mouth (3.5), a hand held over his mouth (3.8), straightening his collar (3.5).
+  for (const n of ['reading', 'drink', 'phone', 'pour']) ANIMS[n + '_bare'] = Object.assign((r, t, p) => ANIMS[n](r, t, p), { upper: true });
+  ANIMS.mouth_bare = Object.assign((r, t, p) => ANIMS.drink(r, Math.min(t, 0.9), p), { upper: true });
+  const RA = [0, 0, 0, 0, 0, 0, 0, 0, 0], RP = ['armR', 'foreR', 'handR'];
+  ANIMS.phone_mouth = Object.assign((r, t, p) => {
+    ANIMS.phone(r, t, p);
+    for (let i = 0; i < 3; i++) { const e = r.parts[RP[i]].rotation; RA[i * 3] = e.x; RA[i * 3 + 1] = e.y; RA[i * 3 + 2] = e.z; }
+    ANIMS.drink(r, Math.min(t, 0.9), p);
+    for (let i = 0; i < 3; i++) r.parts[RP[i]].rotation.set(RA[i * 3], RA[i * 3 + 1], RA[i * 3 + 2]);
+  }, { upper: true });
+  const COLLAR = { dur: 2 };   // lanyard_on's hands-at-the-collar moment, with a little tug
+  ANIMS.collar = Object.assign((r, t) => ANIMS.lanyard_on(r, 1.52 + 0.08 * Math.max(0, Math.sin(t * 6)), COLLAR), { upper: true });
+  function playBare(c, id, anim, o) {
     const a = actor(c, id);
     if (!a) return;
-    a.play(anim, o || {});
-    return c.wait(0.05).then(() => { const m = a.rig.attach[hide]; if (m) m.visible = false; });
+    a.play(anim + '_bare', o || {});
+    return c.wait(0.05);
   }
   // a CAM step glide from wherever the camera is now (the live lens) to a framing
   function glideFromHere(c, to, dur, ease) {
@@ -43,8 +56,27 @@
   // the PUDDING tape, the Polaroid.
   const kit = {};
   let lcd = null;
+  const PUD = (cx, w, h) => {
+    cx.fillStyle = '#f6f1e3'; cx.fillRect(0, 0, w, h); cx.fillStyle = '#e8743b'; cx.fillRect(0, h - 10, w, 10);
+    cx.fillStyle = '#15151a'; cx.font = 'bold 30px "Comic Sans MS", "Segoe Print", cursive'; cx.textAlign = 'center'; cx.textBaseline = 'middle';
+    cx.fillText('PUDDING', w / 2, h * 0.42, w - 12);
+  };
+  // Rue's box opened on the bench (3.7): each thing its own child, so it leaves the box when someone lifts it
+  function contentsKit() {
+    const g = new THREE.Group(), CB = mat(0xb98d5a);
+    const bit = (n, fn) => { const p = new Builder(); fn(p); const o = p.done({ floor: false }); o.name = n; g.add(o); };
+    bit('carton', (p) => { p.box(0.3, 0.2, 0.24, CB, [-0.35, 0.1, 0.02]); p.add(new THREE.BoxGeometry(0.32, 0.005, 0.24).rotateX(-1.2).translate(-0.35, 0.2, -0.14), CB); });
+    bit('lanyard', (p) => { p.box(0.5, 0.004, 0.012, mat(0x7fb4cc), [0.02, 0.004, -0.02], 0.3); p.box(0.06, 0.004, 0.085, mat(0xf4f4f0), [0.2, 0.002, 0.04]); });
+    bit('polaroid', (p) => p.box(0.09, 0.004, 0.105, mat(0x2b2825), [0.12, 0.002, -0.1]));   // face down: the Prologue's dark back
+    bit('micro', (p) => p.box(0.055, 0.012, 0.035, mat(0x2a2c30), [0.02, 0.006, 0.1]));
+    bit('dicta', (p) => p.box(0.05, 0.022, 0.12, mat(0x3a3d42), [0.28, 0.011, -0.08]));
+    bit('pudding', (p) => { p.box(0.1, 0.016, 0.065, mat(0x222222), [-0.08, 0.008, 0.1]); p.plane(0.064, 0.032, matTex(canvasTex(128, 64, PUD, { key: '3c_pudding' })), [-0.08, 0.0165, 0.1], [-H, 0, 0]); });
+    g.name = 'kit3c_contents';
+    return g;
+  }
   function kitProp(c, name) {
     let g = kit[name];
+    if (!g && name === 'contents') g = kit[name] = contentsKit();
     if (!g) {
       const b = new Builder();
       if (name === 'brick') {
@@ -65,11 +97,7 @@
         b.plane(0.078, 0.22, matTex(T), [0, 0.11, 0.0255]);
         b.cyl(0.008, 0.008, 0.13, 6, mat(0x2a2b2e), [0.024, 0.285, -0.01]); b.cyl(0.012, 0.012, 0.02, 6, mat(0x1a1b1e), [0.024, 0.35, -0.01]);
       } else if (name === 'pudding') {
-        const T = canvasTex(128, 64, (cx, w, h) => {
-          cx.fillStyle = '#f6f1e3'; cx.fillRect(0, 0, w, h); cx.fillStyle = '#e8743b'; cx.fillRect(0, h - 10, w, 10);
-          cx.fillStyle = '#15151a'; cx.font = 'bold 30px "Comic Sans MS", "Segoe Print", cursive'; cx.textAlign = 'center'; cx.textBaseline = 'middle';
-          cx.fillText('PUDDING', w / 2, h * 0.42, w - 12);
-        }, { key: '3c_pudding' });
+        const T = canvasTex(128, 64, PUD, { key: '3c_pudding' });
         b.box(0.1, 0.064, 0.013, mat(0x26282d), [0, 0, 0]);
         b.plane(0.084, 0.04, matTex(T), [0, 0.006, 0.0068]);
       } else {   // the Polaroid: white frame, a small dark photograph (the card shows what's on it)
@@ -138,7 +166,7 @@
     const d = LY.rig.d;
     LY.rig.parts.torso.add(m); m.position.set(0, 0.3 - d.T, (d.chestZ || 0.12) + 0.14); m.rotation.set(0.5, 0, 0); m.visible = true;
     l.mood = null;
-    return playBare(c, 'luka', 'reading', { still }, 'textbook');
+    return playBare(c, 'luka', 'reading', { still });
   }
   // 3.9: over his head and onto his chest, where it belongs
   function lanyardOn(c) {
@@ -209,19 +237,20 @@
     const p = kitProp(c, 'brick');
     p.position.set(LAP.x, LAP.y - 0.02, LAP.z - 0.04); p.rotation.set(0.9, PI, 0);
   }
-  // [ECU · locked] the Prologue's lens: 0.49 m square-on to the keypad, fov 30
+  // [ECU · locked] the Prologue's lens (its ECU on the office brick_phone) in the handset's own frame: aimed at the keypad
+  // centre (0, 0.068, 0.019) from (-0.06, -0.007, 0.488) off it, fov 30
   function ecu(c) {
     const p = kit.brick;
     if (!p) return;
     p.updateMatrixWorld(true);
-    V1.set(0, 0.12, 0.03).applyMatrix4(p.matrixWorld);            // the keypad's centre
-    V2.set(0.06, 0.1, 1).normalize().transformDirection(p.matrixWorld);   // out of the face, a touch above
+    V1.set(0, 0.068, 0.019).applyMatrix4(p.matrixWorld);
+    V2.set(-0.06, -0.007, 0.488).transformDirection(p.matrixWorld).multiplyScalar(0.4917);
     c.ui.card(null);
-    c.cam.shot({ shot: 'CAM', pos: V2.multiplyScalar(0.49).add(V1).toArray(), look: V1.toArray(), fov: 30 });
+    c.cam.shot({ shot: 'CAM', pos: V2.add(V1).toArray(), look: V1.toArray(), fov: 30 });
   }
   // [PULL OUT] back and out through the far rear window: his lap, the Walkman, the headphones, the box on the seat, the car
   const CAR_SIDE = { pos: [-1.0, 1.34, 21.05], look: [-2.62, 1.1, 21.3], fov: 48 };
-  const pullOut = (c) => glideFromHere(c, CAR_SIDE, 5);
+  const pullOut = (c) => glideFromHere(c, CAR_SIDE, 3.6);
   // [CLOSE · Rue] from between the front seats (a computed close lands in the roof)
   function carClose(c, dy = 0, fov = 40) {
     const a = actor(c, 'rue58');
@@ -230,7 +259,7 @@
     c.ui.card(null);
     c.cam.shot({ shot: 'CAM', pos: [V1.x + 0.36, V1.y - 0.06, V1.z - 0.6], look: [V1.x, V1.y - 0.05 + dy, V1.z], fov });
   }
-  // the ring: LCD lit, the handset buzzing, the harsh trill every 1.6 s
+  // the ring: LCD lit, the handset buzzing, the harsh trill every 3 s (Black Monday's cadence, 2.12)
   function ring(c, on) {
     ringing = on;
     if (lcd) lcd.visible = on;
@@ -240,8 +269,8 @@
       const p = kit.brick;
       if (!ringing || flow.sceneId !== '3.5' || !p) { removeUpdate(u); if (p) p.rotation.z = 0; return; }
       t += dt;
-      if (t >= n * 1.6) { n++; c.sfx('brick_ring', { vol: 0.9 }); }
-      if (p.parent === c.world.scene) p.rotation.z = (t % 1.6) < 1.0 ? 0.04 * Math.sin(t * 70) : 0;
+      if (t >= n * 3) { n++; c.sfx('brick_ring', { vol: 0.9 }); }
+      if (p.parent === c.world.scene) p.rotation.z = (t % 3) < 1.0 ? 0.04 * Math.sin(t * 70) : 0;
     };
     addUpdate(u);
   }
@@ -250,7 +279,7 @@
     ring(c, false);
     const r = actor(c, 'rue58');
     if (!r) return;
-    await playBare(c, 'rue58', 'phone', {}, 'brick');
+    await playBare(c, 'rue58', 'phone', {});
     r.hold(kitProp(c, 'brick'), 'R');
     r.rig.face.eyes('open');
   }
@@ -261,13 +290,22 @@
     if (!a) return;
     a.setExpr('laugh'); a.rig.face.tears = 1; a.rig.face.redraw();
   }
-  // A white flash fills every window of the store. Then nothing.
+  // A white flash fills every window of the store. Then nothing. (Reduce Flashing: a slow, dim grey glow instead.)
   async function flashWindows(c) {
-    const f = c.world.prop('window_flash');
+    const f = c.world.prop('window_flash'), m = f && f.children[0] && f.children[0].material;
     c.sfx('flash_hum', { vol: 0.25, lp: 900 });
-    if (f) f.visible = true;
-    await c.wait(0.3);
-    if (f) f.visible = false;
+    if (!f) return;
+    f.visible = true;
+    if (options.reduceFlashing && m && !c.flow.skipping) {   // the set's shared material: only uniforms change, restored after
+      m.color.setScalar(0);
+      await new Promise((res) => {
+        let t = 0;
+        const u = (dt) => { t += dt; const k = Math.min(1, t / 1.2); m.emissiveIntensity = 0.35 * Math.sin(k * PI); if (k >= 1) { removeUpdate(u); res(); } };
+        addUpdate(u);
+      });
+      m.color.setScalar(1); m.emissiveIntensity = 1;
+    } else await c.wait(0.3);
+    f.visible = false;
   }
 
   SCENES['3.5'] = {
@@ -291,7 +329,7 @@
     // [PULL OUT] The phone isn't on a desk. It's on Rue's lap in the back of a car, the Walkman beside it, headphones
     // round his neck. A small cardboard box sits on the seat.
     { do: pullOut },
-    { wait: 5.4 },
+    { wait: 3.8 },
     // [WIDE · from the back seat, through the windscreen] The Yes Optus sign in blazing sun. The driver in the foreground.
     { shot: 'INSERT', at: 'car_window' },
     { wait: 1.2 },
@@ -320,10 +358,10 @@
     // [CLOSE · Rue's hand going to his mouth]
     { do: (c) => carClose(c, -0.1, 44) },
     { expr: [['rue58', 'stunned']] },
-    { do: (c) => playBare(c, 'rue58', 'drink', { dur: 2.6, loop: false }, 'mug') },
+    { act: [['rue58', 'phone_mouth']] },   // the handset stays at his ear
     { wait: 1.4 },
     say('operator', '—Will you accept the charges?'),
-    { do: (c) => { const a = actor(c, 'rue58'); if (a) { a.play('phone'); a.setExpr('sad'); } } },
+    { do: (c) => { const a = actor(c, 'rue58'); if (a) { a.play('phone_bare'); a.setExpr('sad'); } } },
     { wait: 0.3 },
     slow('rue58', 'I will.'),
     say('operator', 'Please answer yes or no.'),
@@ -346,7 +384,7 @@
     say('rue58', "Give them a minute. They'll be confused."),
     // [MID] He straightens his collar and picks up the box.
     Object.assign({ shot: 'CAM' }, CAR_SIDE),
-    { do: (c) => { const a = actor(c, 'rue58'); if (a) { a.setExpr('neutral'); a.rig.face.tears = 0; a.rig.face.redraw(); a.play('hug', { dur: 1.1, loop: false }); } } },
+    { do: (c) => { const a = actor(c, 'rue58'); if (a) { a.setExpr('neutral'); a.rig.face.tears = 0; a.rig.face.redraw(); a.play('collar', { dur: 1.1, loop: false }); } } },
     { wait: 1.3 },
     { do: (c) => { const a = actor(c, 'rue58'); if (a) { a.play('give', { dur: 1.2 }); a.hold('rue_box'); } } },
     { wait: 1.6 },
@@ -371,8 +409,13 @@
     c.cam.shot(Object.assign({ shot: 'CAM', pos: V2.toArray(), look: an.at.toArray() }, o));
   }
   const look = (at, fov, card) => ({ do: (c) => { eyeLens(c, at, { fov }); c.ui.card(card ? card[0] : null, card && card[1]); } });
-  // 1.4's push on the display wall, from whoever is looking down the aisle now: it lands on four empty tethers
-  const WALL_PUSH = { move: 'push', amount: 0.6, dur: 6, fov: 26 };
+  // [POV · push-in] 1.4's exact step (72-content-1c WALL_PUSH): it lands on four empty tethers. It's their POV, so the two
+  // of them are out of the picture while it runs (wherever they stand in the aisle).
+  const WALL_PUSH = { shot: 'POV', from: 'display_wall', at: 'display_wall', move: 'push', amount: 0.6, dur: 6, fov: 26 };
+  const unseen = (v) => ({ do: (c) => { for (const id of ['luka', 'chase']) { const a = actor(c, id); if (a) a.visible = v; } } });
+  const WALL_STEPS = [unseen(false), WALL_PUSH, { wait: 3.6 }, me('…Oh no.'), { wait: 0.4 }, unseen(true)];
+  const SIGN_STEPS = [look('aframe', 44), { wait: 1.8 }];   // (no line: the empty spot where the A-frame stood says it)
+  const unfound = (d) => (s) => !s.flags['diff_' + d];
   // "Differences glow slightly after a minute": a faint warm shimmer over each one still unfound
   const GLOW = { halloween: [1.5, 1.35, -2.7], casual: [5.35, 1.9, -10.25], wall: [-2.0, 1.25, -14.1], poster: [10.85, 1.55, -11.28],
     calendar: [10.9, 1.55, -10.35], sign: [-4.9, 0.7, 1.3] };
@@ -387,9 +430,11 @@
     };
     addUpdate(u);
   }
+  const GONE = ['lanyard', 'badge', 'recorder', 'notebook'];
   function dress36(c) {
     watch();
     for (const d of DIFFS) delete state.flags['diff_' + d];
+    for (const it of GONE) inventory.remove(it);   // nothing of 1987 came home with them (the lanyard went to Rue in 3.4)
     lanyardGone(c);
     const l = actor(c, 'luka'), ch = actor(c, 'chase'), j = actor(c, 'jordan'), lk = actor(c, 'luke');
     if (l) { l.mood = null; l.habit = null; l.place([5.7, 0, -26.8, -0.6]); l.play('lie_tangled'); l.setExpr('sleep'); }
@@ -429,16 +474,15 @@
       { id: 'casual', at: 'jordan', r: 2.7, verb: 'Look', once: true, flag: 'diff_casual',
         steps: [{ do: (c) => { const j = actor(c, 'jordan'); if (j) j.face(c.state.active); } }, { wait: 0.3 },
           { shot: 'MID', on: 'jordan' }, { act: [['jordan', 'wave', { dur: 1.6 }]] }, { wait: 1.0 }, me("Who's that?")] },
-      { id: 'wall', at: [-2.0, 0, -6.2], r: 1.9, verb: 'Look', once: true, flag: 'diff_wall',
-        steps: [{ do: (c) => eyeLens(c, 'display_wall', WALL_PUSH) }, { wait: 3.6 }, me('…Oh no.'), { wait: 0.4 }] },
-      { id: 'wall_near', at: 'display_wall', r: 1.5, verb: 'Look', once: true, flag: 'diff_wall',
-        steps: [look('tethers', 50), { wait: 1.6 }, me('…Oh no.')] },
+      { id: 'wall', at: [-2.0, 0, -6.2], r: 1.9, verb: 'Look', once: true, flag: 'diff_wall', when: unfound('wall'), steps: WALL_STEPS },
+      { id: 'wall_near', at: 'display_wall', r: 1.5, verb: 'Look', once: true, flag: 'diff_wall', when: unfound('wall'), steps: WALL_STEPS },
       { id: 'poster', at: 'missing_poster', r: 1.0, verb: 'Look', once: true, flag: 'diff_poster',
         steps: [look('missing_poster', 34, ['missing', {}]), { wait: 3.2 }, { do: (c) => c.ui.card(null) }] },
       { id: 'calendar', at: 'calendar', r: 0.9, verb: 'Look', once: true, flag: 'diff_calendar',
         steps: [look('calendar', 44), { wait: 1.4 }, say('chase', "…That's not right.")] },
-      { id: 'sign', at: [-2.0, 0, -0.95], r: 1.3, verb: 'Look', once: true, flag: 'diff_sign',
-        steps: [look('aframe', 44), { wait: 1.4 }, me("…Where's the sign?")] },   // (the spot outside where the A-frame stood)
+      // the front door, and (as in 1.1) the glass nearest the spot outside where the A-frame stood, where its glow is
+      { id: 'sign', at: [-2.0, 0, -0.95], r: 1.3, verb: 'Look', once: true, flag: 'diff_sign', when: unfound('sign'), steps: SIGN_STEPS },
+      { id: 'sign_glass', at: 'aframe', r: 2.0, verb: 'Look', once: true, flag: 'diff_sign', when: unfound('sign'), steps: SIGN_STEPS },
       // --- the rest of the store
       { id: 'backroom_door', at: [6.4, 0, -23.3], r: 0.8, verb: 'Open', door: { to: [6.1, 0, -25.4, PI], kind: 'jarvis' }, do: doorOpened },
       { id: 'backroom_door_back', at: [6.4, 0, -24.45], r: 0.6, verb: 'Open', door: { to: [6.4, 0, -22.4, 0], kind: 'jarvis' } },
@@ -461,7 +505,7 @@
       ['follow', null], ['objective', null],
       ['cutscene', '3.6_luke'],
     ],
-    grants: { flags: { home: true, took_blame: true } },
+    grants: { flags: { home: true, took_blame: true }, removeItems: GONE },
   };
 
   CUTSCENES['3.6_wake'] = [
@@ -510,6 +554,7 @@
   const LUKE_OUT = [9.85, 0, -11.85, -0.75], LUKA_AT = [7.95, 0, -10.15, 2.3], CHASE_AT = [7.3, 0, -10.55, 2.3], LUKA_FRONT = [8.1, 0, -10.9, 2.2];
   CUTSCENES['3.6_luke'] = [
     { music: null, fade: 1.5 },
+    unseen(true),
     { place: 'luka', at: LUKA_AT }, { place: 'chase', at: CHASE_AT },
     { act: [['luka', 'idle'], ['chase', 'idle']] },
     { place: 'luke', at: 'office_door_in' }, { do: (c) => { const l = actor(c, 'luke'); if (l) { l.visible = true; l.setExpr('worried'); } } },
@@ -541,13 +586,14 @@
     { expr: [['chase', 'worried']] },
     { shot: 'TOP', on: 'chase' },
     { act: [['chase', 'head_hands']] },
-    { wait: 1.6 },
-    // [LOW · Luka, stepping half in front of Chase] The angle the camera found for him at Torchlight. He doesn't know why
-    // he's standing like this.
+    { wait: 0.7 },
+    // [LOW · Luka, stepping half in front of Chase] The angle the camera found for him at Torchlight (2.13's exact step).
+    // He doesn't know why he's standing like this. (He steps in at the edge of the top-down, then the cut.)
     { expr: [['luka', 'determined']] },
-    { shot: 'MID', on: 'luka', angle: 'low', dist: 1.6 },
     { move: 'luka', to: LUKA_FRONT, speed: 0.9 },
-    { wait: 0.3 },
+    { face: 'luka', to: LUKA_FRONT[3], dur: 0 },
+    { shot: 'CLOSE', on: 'luka', angle: 'low', dist: 1.1, locked: true },
+    { wait: 0.4 },
     say('luka', 'It was me.'),
     say('luke', 'What was?'),
     say('luka', 'Whatever it was. It was my call. He was following me.'),
@@ -618,7 +664,7 @@
   const LUKE_WALK_A = [[-0.75, 0, -3.0], [0.35, 0, -3.5]], LUKE_WALK_B = [[1.9, 0, -5.8], [5.95, 0, -7.35]];
   const COUNTER_LUKA = [5.8, 0, -10.1, 0], COUNTER_CHASE = [4.7, 0, -10.1, 0], JORDAN_AISLE = [0.7, 0, -4.6, -2.3];
   // the backroom: the three of them round the workbench, the box on it
-  const BENCH_RUE = [4.55, 0, -28.95, PI], BENCH_LUKA = [3.85, 0, -28.7, 1.75], BENCH_CHASE = [5.25, 0, -28.75, -1.75], RUE_BACK = [4.55, 0, -27.65, PI];
+  const BENCH_RUE = [4.55, 0, -28.95, PI], BENCH_LUKA = [3.85, 0, -28.7, 1.75], BENCH_CHASE = [5.6, 0, -28.5, -1.95], RUE_BACK = [4.55, 0, -27.65, PI];
   const BOX_ON_BENCH = [4.45, 0.93, -29.55], DICTA_BENCH = [4.75, 0.945, -29.2];
   const walkTo = async (c, id, pts, speed) => { for (const p of pts) { const a = actor(c, id); if (!a || c.flow.sceneId !== '3.7') return; await a.moveTo(p, { speed }); } };
   const near = (c, id, x, z, r) => { const a = actor(c, id); return !a || Math.hypot(a.pos.x - x, a.pos.z - z) < r; };
@@ -646,14 +692,22 @@
     for (const id of ['luka', 'chase']) { const a = actor(c, id); if (a) { a.mood = null; a.habit = null; a.play('idle'); a.setExpr('neutral'); } }
     const cd = c.world.prop('car_door'); if (cd) cd.rotation.y = 0;
     for (const n of ['box_contents', 'dictaphone', 'teas']) { const o = c.world.prop(n); if (o) o.visible = false; }
+    if (kit.contents) kit.contents.visible = false;
     const d = c.world.prop('backroom_door'); if (d) { d.rotation.y = 0; d.userData.open = undefined; }
     const o = c.world.prop('office_door'); if (o) { o.rotation.y = 0; o.userData.open = undefined; }
   }
+  // Rue's box, opened on the bench; `lift(n)` takes one thing out of it as someone picks it up
+  function contentsOn(c) {
+    const g = kitProp(c, 'contents');
+    g.position.set(4.45, 0.936, -29.7); g.rotation.set(0, 0, 0);   // on the bench mat (0.935), clear of the goggles
+    for (const o of g.children) o.visible = true;
+  }
+  const lift = (c, n) => { const o = kit.contents && kit.contents.getObjectByName(n); if (o) o.visible = false; };
   // "Put the kettle on? [YES] [NO]" — and Rue presses YES himself
   async function kettleYes(c) {
     const p = c.ask('Put the kettle on?', { test: true });
     await c.wait(1.1);
-    if (!c.flow.skipping && !TEST.auto) { dispatchEvent(new KeyboardEvent('keydown', { code: 'Enter', key: 'Enter' })); dispatchEvent(new KeyboardEvent('keyup', { code: 'Enter', key: 'Enter' })); }
+    if (!c.flow.skipping && !TEST.auto) document.querySelector('#dlg .opts button')?.click();   // YES (not a synthetic key: that flips the input scheme)
     await p;
     c.sfx('kettle');
     saveGame(); c.ui.toast('Saved.');
@@ -674,7 +728,7 @@
     // cardboard box under his arm. In the foreground, the new casual turns from the window.
     { shot: 'INSERT', at: 'front_glass' },
     { prop: 'car_black', fn: (o) => o.userData.pullUp() },
-    { wait: 5.4 },
+    { wait: 3.9 },
     { prop: 'car_door', rotY: -1.1 }, { sfx: 'thud', vol: 0.3 },
     { wait: 0.5 },
     { do: (c) => { const r = actor(c, 'rue58'); if (r) { r.visible = true; r.hold('rue_box'); } } },
@@ -726,10 +780,8 @@
     { wait: 1.4 },
     { do: (c) => { const a = actor(c, 'rue58'); if (a) { a.setExpr('sad'); a.rig.face.mouth('smile'); } } },
     slow('rue58', 'Luka. Chase.'),
-    { shot: 'CLOSE', on: 'chase' },
     { expr: [['chase', 'stunned']] },
     say('chase', 'You know our names?'),
-    { shot: 'CLOSE', on: 'rue58' },
     slow('rue58', "I've known your names for thirty-nine years."),
     { loop: 'hold_music', stop: true, fade: 1.5 },
     // [WIDE] Luke mouths "thirty-nine years?" at Jordan.
@@ -749,7 +801,7 @@
     { do: boxToBench },
     { place: 'luka', at: BENCH_LUKA }, { place: 'chase', at: BENCH_CHASE }, { place: 'rue58', at: 'kettle' },
     { hold: 'rue58', prop: 'kettle' },
-    { do: (c) => playBare(c, 'rue58', 'pour', {}, 'mug') },
+    { do: (c) => playBare(c, 'rue58', 'pour', {}) },
     { shot: 'CAM', pos: [10.2, 1.7, -29.6], look: [9.5, 1.35, -28.5], fov: 44 },
     { wait: 0.8 },
     { do: kettleYes },
@@ -762,12 +814,12 @@
     // an old dictaphone, and a cassette labelled PUDDING in felt-tip.
     { place: 'rue58', at: BENCH_RUE },
     { do: (c) => { const b = c.world.prop('rue_box'); if (b) b.visible = false; } },
-    { prop: 'box_contents', visible: true },
-    { shot: 'INSERT', at: [4.55, 0.94, -29.56], from: [4.56, 1.52, -29.28], fov: 44 },
+    { do: contentsOn },
+    { shot: 'CAM', pos: [4.52, 1.6, -29.7], look: [4.52, 0.94, -29.7], fov: 44 },
     { sfx: 'rip', vol: 0.3 },
     { wait: 2.8 },
     // [INSERT] Luka lifts the lanyard. The badge says LUKA. On the back, in biro: 1158.
-    { do: (c) => lanyardHeld(c) },
+    { do: (c) => { lift(c, 'lanyard'); return lanyardHeld(c); } },
     { shot: 'INSERT', at: 'luka', card: ['badge', { name: 'LUKA', old: true }] },
     { wait: 1.6 },
     { shot: 'INSERT', at: 'luka', card: ['badge', { name: 'LUKA', back: '1158', old: true }] },
@@ -780,7 +832,7 @@
     slow('rue58', "You had it three weeks ago. I've had it since 1987."),
     // [INSERT] Chase turns the Polaroid over. For the first time we see the front: two blurry figures in polos and a young
     // man in a blazer, in front of a stone arch.
-    { do: (c) => { hand(c, 'chase', 'polaroid'); return playBare(c, 'chase', 'reading', {}, 'textbook'); } },
+    { do: (c) => { lift(c, 'polaroid'); hand(c, 'chase', 'polaroid'); return playBare(c, 'chase', 'reading', {}); } },
     { shot: 'INSERT', at: 'chase', card: ['polaroid', { front: true }] },
     { sfx: 'polaroid', vol: 0.4 },
     { wait: 2.2 },
@@ -788,7 +840,7 @@
     { expr: [['chase', 'stunned']] },
     say('chase', "…That's us."),
     // [CLOSE · Chase] He picks up the PUDDING cassette.
-    { do: (c) => { drop(c, 'chase'); hand(c, 'chase', 'pudding'); faceOut(c, 'pudding'); return playBare(c, 'chase', 'reading', {}, 'textbook'); } },
+    { do: (c) => { lift(c, 'pudding'); drop(c, 'chase'); hand(c, 'chase', 'pudding'); faceOut(c, 'pudding'); return playBare(c, 'chase', 'reading', {}); } },
     { do: (c) => faceAndHands(c, 'chase', 0.95) },
     { wait: 1.0 },
     say('chase', "…That's my writing."),
@@ -810,14 +862,14 @@
     { shot: 'CAM', pos: [6.1, 1.6, -27.1], look: [4.6, 1.05, -28.9], fov: 50 },
     { act: [['rue58', 'give', { dur: 1.4 }]] },
     { wait: 0.6 },
-    { prop: 'dictaphone', visible: true, pos: DICTA_BENCH, rotY: 0.3 },
+    { do: (c) => lift(c, 'dicta') }, { prop: 'dictaphone', visible: true, pos: DICTA_BENCH, rotY: 0.3 },
     { sfx: 'clunk', vol: 0.3 },
     { wait: 0.8 },
     say('rue58', "Play the tape. I'll give yous the room."),
     // [WIDE · locked, the corridor outside the backroom] Composed exactly like the corridor in 3.3. Rue sits on a stack of
     // stock boxes, just as he once sat on the stairs.
     { do: (c) => { drop(c, 'chase'); lanyardGone(c); } },
-    { place: 'rue58', at: 'corridor_boxes' }, { act: [['rue58', 'sit', { h: 0.46 }]] }, { expr: [['rue58', 'neutral']] },
+    { place: 'rue58', at: [5.72, 0.02, -21.95, 0] }, { act: [['rue58', 'sit', { h: 0.46 }]] }, { expr: [['rue58', 'neutral']] },
     CORRIDOR,
     { wait: 3.2 },
   ];
@@ -851,6 +903,7 @@
     const d = c.world.prop('backroom_door'); if (d) { d.rotation.y = 0; d.userData.open = undefined; }
     const t = c.world.prop('dictaphone'); if (t) { t.visible = true; t.position.set(6.4, 0.01, -26.95); t.rotation.set(0, 0.4, 0); }
     for (const n of ['box_contents', 'teas', 'rue_box']) { const o = c.world.prop(n); if (o) o.visible = false; }
+    if (kit.contents) kit.contents.visible = false;
     hiss = null;
   }
   function tapeHiss(c, on) {
@@ -927,19 +980,22 @@
     slow('chase', 'Yeah.'),
     { wait: 0.6 },
     // [CLOSE · through the small window in the backroom door] The only cut: Rue on the stock boxes, a hand over his mouth.
-    { do: (c) => { const a = actor(c, 'rue58'); if (a) { a.setExpr('crying'); } return playBare(c, 'rue58', 'drink', { dur: 4, loop: false }, 'mug'); } },
+    { do: (c) => { const a = actor(c, 'rue58'); if (a) { a.setExpr('crying'); } return playBare(c, 'rue58', 'mouth', {}); } },
     { shot: 'INSERT', at: [5.78, 1.2, -22.5], from: [7.02, 1.84, -25.24], fov: 24 },
     { wait: 3.2 },
   ];
 
   // =================================================================== 3.9 — "I've Always Liked the Sound of That"
-  const PULL = ['pull_1', 'pull_2', 'pull_3', 'pull_4', 'pull_5', 'pull_6'], PULL_DUR = [2.0, 4.0, 5.6, 5.8, 10];
+  // [PULL OUT] the store backwards (pull_1..pull_5), then 1.1's crane in reverse: its landing frame over the car park
+  // (crane_end), up to the frame it opened on, in the sun (crane_top). One continuous chain of glides, ~17 s.
+  const PULL = ['pull_1', 'pull_2', 'pull_3', 'pull_4', 'pull_5', 'crane_end', 'crane_top'], PULL_DUR = [1.4, 1.9, 2.2, 2.2, 2.6, 5];
   function pullOut39() {
-    const steps = [{ do: (c) => { const a = SETS.reddy.anchors.pull_1; glideFromHere(c, { pos: a.from, look: a.at, fov: a.fov }, 3, 'in'); } }, { wait: 3 }];
-    for (let i = 0; i < 5; i++) {
-      const a = SETS.reddy.anchors[PULL[i]], b = SETS.reddy.anchors[PULL[i + 1]];
-      steps.push({ shot: 'CAM', pos: a.from, look: a.at, fov: a.fov, to: { pos: b.from, look: b.at, fov: b.fov }, dur: PULL_DUR[i], ease: i === 4 ? 'out' : 'linear' });
-      if (i === 3) steps.push({ music: null, fade: 9 });
+    const A = SETS.reddy.anchors, n = PULL_DUR.length;
+    const steps = [{ do: (c) => { const a = A.pull_1; glideFromHere(c, { pos: a.from, look: a.at, fov: a.fov }, 2.2, 'in'); } }, { wait: 2.2 }];
+    for (let i = 0; i < n; i++) {
+      const a = A[PULL[i]], b = A[PULL[i + 1]];
+      steps.push({ shot: 'CAM', pos: a.from, look: a.at, fov: a.fov, to: { pos: b.from, look: b.at, fov: b.fov }, dur: PULL_DUR[i], ease: i === n - 1 ? 'out' : 'linear' });
+      if (i === n - 2) steps.push({ music: null, fade: 7 });
       steps.push({ wait: PULL_DUR[i] });
     }
     return steps;
@@ -958,6 +1014,7 @@
     const t = c.world.prop('teas'); if (t) t.visible = true;
     const dp = c.world.prop('dictaphone'); if (dp) { dp.visible = true; dp.position.set(DICTA_BENCH[0], DICTA_BENCH[1], DICTA_BENCH[2]); }
     for (const n of ['box_contents', 'rue_box']) { const o = c.world.prop(n); if (o) o.visible = false; }
+    if (kit.contents) kit.contents.visible = false;
   }
   // [CLOSE · Rue, eyes wet, smiling] on the line the pull-out will take back to the door
   function finalClose(c) {
@@ -972,7 +1029,7 @@
     playable: [], swap: false, hud: null, music: null,
     spawn: { luka: LUKA39, chase: CHASE39, rue58: [6.4, 0, -22.9, PI], luke: [6.4, 0, -20.5, PI] },
     steps: [['cutscene', '3.9']],
-    grants: { flags: { opted_in: true, lanyard_back: true } },
+    grants: { flags: { opted_in: true, lanyard_back: true }, items: ['lanyard', 'badge'] },
   };
 
   CUTSCENES['3.9'] = [
@@ -1016,13 +1073,13 @@
     { wait: 0.4 },
     slow('rue58', 'I heard you, you know. That night on my floor. "Nobody else could do it, so it had to be me." ^ I\'ve hired a lot of people since then, Luka. It\'s the only thing I look for.'),
     // [CLOSE · Luka] He looks at the lanyard in his hands. He doesn't twist it.
-    { do: (c) => playBare(c, 'luka', 'reading', { still: true }, 'textbook') },
+    { do: (c) => playBare(c, 'luka', 'reading', { still: true }) },
     { wait: 0.1 },
     { do: (c) => faceAndHands(c, 'luka', 0.85, 44) },
     { wait: 2.6 },
     // [WIDE · Luke framed in the backroom doorway] He's heard just enough to be very confused.
     { place: 'luke', at: 'doorway' }, { do: (c) => { const a = actor(c, 'luke'); if (a) { a.visible = true; a.setExpr('worried'); } } },
-    { shot: 'CAM', pos: [6.3, 1.45, -27.1], look: [6.4, 1.3, -24.15], fov: 28 },
+    { shot: 'CAM', pos: [6.3, 1.5, -29.4], look: [6.4, 1.2, -24.15], fov: 40 },
     { wait: 0.8 },
     say('luke', "…Luka. You're on the roster Thursday. Don't be late."),
     // [LOW · Luka]
@@ -1034,12 +1091,13 @@
     { do: (c) => { const a = actor(c, 'luke'); if (a) a.moveTo([6.4, 0, -21.0]).then(() => { a.visible = false; }); } },
     { wait: 0.6 },
     { do: lanyardOn },
+    { do: () => { inventory.add('lanyard'); inventory.add('badge'); } },   // his again (quietly: no toast in this beat)
     { wait: 2.2 },
     { act: [['luka', 'idle']] },
     { face: 'luka', to: 'rue58' },
     // [CLOSE · Rue holding up the PUDDING cassette]
     { face: 'rue58', to: 0.35 },
-    { do: (c) => { hand(c, 'rue58', 'pudding'); faceOut(c, 'pudding'); return playBare(c, 'rue58', 'reading', {}, 'textbook'); } },
+    { do: (c) => { hand(c, 'rue58', 'pudding'); faceOut(c, 'pudding'); return playBare(c, 'rue58', 'reading', {}); } },
     { wait: 0.1 },
     { do: (c) => faceAndHands(c, 'rue58', 1.0, 42) },
     { wait: 0.5 },
@@ -1050,26 +1108,26 @@
     { wait: 1.6 },
     { do: (c) => { const a = actor(c, 'chase'); if (a) a.rig.face.mouth('closed'); } },
     { wait: 0.6 },
-    { shot: 'CLOSE', on: 'rue58' },
     say('rue58', "I still don't know why Pudding."),
-    { shot: 'CLOSE', on: 'chase' },
     { expr: [['chase', 'neutral']] },
     say('chase', '…Long story.'),
-    { shot: 'CLOSE', on: 'rue58' },
     say('rue58', "I've got time."),
-    { shot: 'CLOSE', on: 'chase' },
     { do: (c) => { const a = actor(c, 'chase'); if (a) a.rig.face.mouth('smile'); } },
     say('chase', "It's still a long story."),
     // [INSERT] Rue holds up the brick phone.
-    { do: (c) => { drop(c, 'rue58'); hand(c, 'rue58', 'brick'); faceOut(c, 'brick'); if (lcd) lcd.visible = false; return playBare(c, 'rue58', 'reading', {}, 'textbook'); } },
+    { do: (c) => {
+      drop(c, 'rue58'); hand(c, 'rue58', 'brick'); if (lcd) lcd.visible = false;
+      const p = kit.brick; if (p) { p.rotation.set(PI, 0, 0); p.position.y *= -1; p.position.z *= -1; }   // keypad toward the lens, the right way up (turned about its centre)
+      return playBare(c, 'rue58', 'reading', {});
+    } },
     { wait: 0.1 },
     { do: (c) => handShot(c, 'rue58', 0.55, 0.06, 34) },
     { wait: 1.0 },
     slow('rue58', "This has rung twice in thirty-nine years. Once with the worst news of my life. Once with the best. ^ I'd like it to ring a bit more. If that's all right."),
-    // [TWO-SHOT · Luka and Chase look at each other] A short, easy hold. Nobody needs to say anything.
-    { do: (c) => { drop(c, 'rue58'); const a = actor(c, 'rue58'); if (a) a.play('idle'); } },
-    { act: [['chase', 'stand', { h: 0.1 }]] },
+    { act: [['chase', 'stand', { h: 0.1 }]] },   // (off the insert)
     { wait: 1.0 },
+    // [TWO-SHOT · Luka and Chase look at each other] A short, easy hold. Nobody needs to say anything.
+    { do: (c) => { drop(c, 'rue58'); const a = actor(c, 'rue58'); if (a) a.play('idle'); } },   // under the cut
     { place: 'rue58', at: RUE_END }, { place: 'luka', at: LUKA_END }, { place: 'chase', at: CHASE_END },
     { act: [['chase', 'idle']] },
     { expr: [['luka', 'neutral'], ['chase', 'neutral']] },
@@ -1080,7 +1138,7 @@
     { do: (c) => glanceAt(c, 'luka', 'rue58', 2.4) },
     say('luka', 'Opt us in.'),
     // [CLOSE · Rue, eyes wet, smiling]
-    { do: (c) => { const a = actor(c, 'rue58'); if (a) { a.setExpr('laugh'); a.rig.face.tears = 1; a.rig.face.redraw(); } } },
+    { do: (c) => { const a = actor(c, 'rue58'); if (a) { a.setExpr('sad'); a.rig.face.mouth('smile'); a.rig.face.tears = 1; a.rig.face.redraw(); } } },
     { do: finalClose },
     { wait: 1.0 },
     slow('rue58', "I've always liked the sound of that."),

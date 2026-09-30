@@ -19,6 +19,17 @@ MINIGAMES.tether = (() => {
     nextPhone();
   }
   function nextPhone() { misses = 0; zone = ZONE[phone] || 0.1; pos = 0; dir = 1; lock = 0.2; }
+  // a miss: the cable snaps him back a step — he staggers, arms out, and squares up again (one-shot, ~0.35 s)
+  ANIMS.stumble = (r, t, pp) => {
+    const P = r.parts, u = Math.min(1, t / (pp.dur || 0.35)), k = Math.sin(u * Math.PI), o = r.d.armOut || 0.1;
+    r.seated = false;
+    P.hips.position.z -= 0.05 * k; P.hips.position.y -= 0.03 * k;
+    P.legR.rotation.x = 0.5 * k; P.shinR.rotation.x = 0.08 + 0.6 * k; P.footR.rotation.x = -0.3 * k;
+    P.legL.rotation.x = -0.18 * k; P.shinL.rotation.x = 0.08 + 0.25 * k;
+    P.torso.rotation.x = -0.3 * k; P.head.rotation.x = 0.22 * k;
+    P.armL.rotation.set(-0.4 * k, 0, o + 0.9 * k); P.armR.rotation.set(-0.4 * k, 0, -o - 0.9 * k);
+    P.foreL.rotation.x = -0.14 - 0.5 * k; P.foreR.rotation.x = -0.14 - 0.5 * k;
+  };
 
   function rip() {
     const n = phone + 1;
@@ -66,7 +77,7 @@ MINIGAMES.tether = (() => {
       // miss: the cable twangs, Chase stumbles and goes again
       api.sfx('twang');
       twangAt[phone] = performance.now() / 1000;
-      if (chase) chase.play(misses & 1 ? 'turn' : 'shrug', { loop: false, dur: 0.35 });
+      if (chase) chase.play('stumble', { loop: false, dur: 0.35 });
       shake = 0.3; lock = 0.35;
       if (++misses === 3) zone = ZONE[phone] * 2;
     },

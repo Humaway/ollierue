@@ -178,7 +178,7 @@ const { world, cam, frame, player } = (() => {
     live.delete(e.id);
   }
   function trim() {
-    for (const e of live.values()) { if (live.size <= 2) break; if (e !== cur && e !== splitE) retire(e); }
+    for (const e of live.values()) { if (live.size <= W.liveMax) break; if (e !== cur && e !== splitE) retire(e); }
   }
   function ensure(id) {             // live entry for id (builds it), marked most recently used
     let e = live.get(id);
@@ -1168,6 +1168,7 @@ const { world, cam, frame, player } = (() => {
   // ------------------------------------------------------------ world
   const W = {
     set: null, setId: null, actors, torchAuto: true, camera,
+    liveMax: 2,                     // live sets kept (the epilogue's match cuts hold three: no builds between shots)
     get torch() { return cur ? cur.spot : null; },
     get scene() { return cur ? cur.scene : null; },
     async load(id, o = {}) {

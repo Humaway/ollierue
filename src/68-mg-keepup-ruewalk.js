@@ -191,6 +191,9 @@ MINIGAMES.rue_walk = (() => {
     at(Math.min(1, AT[walk][i] + 0.1) * len, pt);
     const nx = Math.cos(pt[1]), nz = -Math.sin(pt[1]), s = nx * pt[0] + nz * pt[2] > 0 ? 6 : -6;
     const x = Math.max(-17.5, Math.min(17.5, pt[0] + nx * s)), z = Math.max(-12.8, Math.min(12.8, pt[2] + nz * s));
+    if (walk === 1 && PEOPLE[i].id === 'fiachra') {   // walk 1: the busker at the gate, wandering over from the arch as Rue sets off
+      a.place([-19.2, 0, -2.6, Math.PI / 2]); a.visible = true; a.play('idle'); a.moveTo([x, 0, z], {}); return;
+    }
     a.place([x, 0, z, Math.atan2(pt[0] - x, pt[2] - z)]); a.visible = true; a.play('idle');
   }
 

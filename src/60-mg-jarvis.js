@@ -152,7 +152,7 @@
     const pat = [false, false, false, false, false, false, false, false];
     let M, F, api, P, mode, run = 0, rows, rowsEl, h1, fill, pctEl, crashEl, crashMsg, spinEl, tapEl, dots, black, bub, V;
     let cur, t, cap, phase = 'end', phaseT, reason, prog, shown, idle, nextPop, lastPop, blocked, busy, rowT, typing, typeT;
-    let hold, holdKey, holdT, stepT, settle, optF, focusEl, barkT, barkUsed = 0, bubT, blipN, blipT, bubQ, lastStep, skipStep;
+    let hold, holdKey, holdT, stepT, settle, optF, focusEl, barkT, barkUsed = 0, bubT, blipN, blipT, bubQ, lastStep, skipStep, quiet, fillT;
 
     function build() {
       F = frame();
@@ -289,10 +289,12 @@
       if (phase !== 'form' && phase !== 'spin') return;
       phase = 'crash'; phaseT = 0; reason = why; hold = 0; typing = null;
       if (api.popup.clear) api.popup.clear();
-      api.sfx('crash');
       const f = api.state.flags;
       f.seen_restarts = true;
       if (why === 'optin') f.seen_optin = true;
+      // 1.2 cycle 3 and 1.3 end on the opt-in click / the spinning wheel: the cutscene after carries the crash
+      if (quiet) { if (mode === 'dazza') { F.win.classList.add('mg-wait'); spinEl.style.display = 'flex'; } return; }
+      api.sfx('crash');
       crashMsg.textContent = mode === 'dazza'
         ? 'JARVIS has encountered a problem and needs to restart.\n\nError 4044\nCustomer not found. User not found. JARVIS not found.'
         : 'JARVIS has stopped responding and needs to restart.\n\nAny unsaved progress has been lost.\nAll progress was unsaved.';
@@ -352,13 +354,16 @@
         F.clk.textContent = P.time || '';
         makeRows(mode === 'dazza' ? ['search', 'verify', 'verify2'] : ['search', 'dob', 'id', 'mfa', 'plan', 'service', 'optin']);
         rowsEl.className = rows.length < 5 ? 'mg-rows few' : 'mg-rows';
-        // Cycle 2 remembers exactly the wrong thing; cycle 3 and the reprise start near the opt-in box.
+        // Cycle 2 remembers exactly the wrong thing; the reprise starts near the opt-in box; cycle 3 opens on the
+        // blank form and whips down it on autopilot (fillT) to the opt-in box.
+        quiet = mode === 'dazza' || (mode === 'margaret' && short);
+        fillT = mode === 'margaret' && short ? 0.4 : 0;
         for (const r of rows) {
-          if (mode === 'dazza' || r.k === 'optin') continue;
+          if (mode === 'dazza' || r.k === 'optin' || fillT) continue;
           if (short || (mode === 'reprise' ? r.k !== 'search' : r.k === 'search' && cyc > 1)) done(r, true);
         }
         pat.fill(false);
-        phase = 'form'; t = 0; idle = 0; rowT = 0; busy = false; typing = null; hold = 0; holdKey = null;
+        phase = 'form'; t = 0; idle = 0; rowT = 0; busy = fillT > 0; typing = null; hold = 0; holdKey = null;
         blocked = false; lastPop = -1; nextPop = short ? 1.5 : 2.5; barkT = 5 + Math.random() * 3; bubT = 0; shown = -1;
         focusEl = setFocus(focusEl, null);
         next();
@@ -381,6 +386,7 @@
         }
         if (phase === 'crash') {
           phaseT += dt;
+          if (quiet) { if (phaseT > 0.25) fin({ crashed: true, reason }); return; }
           if (phaseT > 1.4) black.style.opacity = '1';
           if (phaseT > 1.9) { if (mode === 'reprise') startTap(); else fin({ crashed: true, reason }); }
           return;
@@ -400,6 +406,10 @@
         }
         if ((t += dt) >= cap) { crash('cap'); return; }
         if (phase === 'spin') { if ((phaseT += dt) > 2.6) crash('e4044'); return; }
+        if (fillT > 0 && (fillT -= dt) <= 0) {   // cycle 3's autopilot: one row ticked every 0.15 s
+          const r = rows[cur];
+          if (r && r.k !== 'optin') { done(r); api.sfx('tick'); fillT = 0.15; } else busy = false;
+        }
 
         // ---- the form
         const n = openPops(api), block = n > 0 || blocked;

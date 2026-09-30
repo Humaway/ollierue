@@ -272,8 +272,9 @@ const { say, choose, ask } = (() => {
       const sp = o.speed || 'normal';
       Object.assign(D, { mode: 'say', res, id, text: out, beats, bi: 0, i: 0, acc: 0, pause: 0, typing: true, n: 0, after: 0, cwait: false,
         cps: CONFIG.text[sp] * CONFIG.text[options.textSpeed] / CONFIG.text.normal, fast: sp === 'fast' || options.textSpeed === 'fast',
-        q: /\?[\s…—"')]*$/.test(out), censor: !!o.censor, auto: o.auto || 0 });
-      D.len = D.censor ? Math.max(1, Math.floor(out.length * 0.75)) : out.length;
+        q: /\?[\s…—"')]*$/.test(out), censor: o.censor || false, auto: o.auto || 0 });
+      // censor: true | 'pop-up text'. A line already written up to the cut (ends in —) is typed in full.
+      D.len = D.censor && !/—$/.test(out) ? Math.max(1, Math.floor(out.length * 0.75)) : out.length;
       const ch = CHARACTERS[id];
       D.talk = ch && ch.voice && ch.voice.also ? id.split('_') : [id];
       node.data = ''; optsEl.classList.add('off'); more.classList.add('off');
@@ -286,7 +287,7 @@ const { say, choose, ask } = (() => {
     // the swearing censor: JARVIS slams a pop-up over the speaker's face
     state.flags.seen_swearing = true;
     const who = D.talk[0], hasActor = typeof world !== 'undefined' && world.actor && world.actor(who);
-    const p = popup({ msg: 'Language detected. This interaction has been flagged for coaching.', icon: 'warn', buttons: ['OK'], at: hasActor ? { actor: who } : 'center', shake: true });
+    const p = popup({ msg: typeof D.censor === 'string' ? D.censor : 'Language detected. This interaction has been flagged for coaching.', icon: 'warn', buttons: ['OK'], at: hasActor ? { actor: who } : 'center', shake: true });
     D.cwait = true;
     const res = D.res, done = () => { if (D.res === res && D.cwait) finish(); };
     p.done.then(done);
@@ -1373,17 +1374,20 @@ Object.assign(CARDS, (() => {
     p.fillStyle = '#8c857a'; p.fillRect(0, 40, 240, 200);                      // the gate's stone front
     p.fillStyle = '#2e2b28'; p.beginPath(); p.moveTo(80, 200); p.lineTo(80, 110); p.arc(120, 110, 40, Math.PI, 0); p.lineTo(160, 200); p.fill(); // arch
     p.fillStyle = '#6d675f'; p.fillRect(0, 196, 240, 44);                      // cobbles
-    const fig = (fx, shirt, legs, hair, tall) => {
-      p.fillStyle = legs; p.fillRect(fx - 11, 170 - tall, 9, 60 + tall); p.fillRect(fx + 2, 170 - tall, 9, 60 + tall);
-      p.fillStyle = shirt; p.beginPath(); p.roundRect(fx - 17, 118 - tall, 34, 58, 8); p.fill();
-      p.fillStyle = '#e4c2a2'; p.beginPath(); p.arc(fx, 102 - tall, 13, 0, PI2); p.fill();
-      p.fillStyle = hair; p.beginPath(); p.arc(fx, 97 - tall, 13, Math.PI, 0); p.fill();
+    const fig = (q, fx, shirt, legs, hair, tall) => {
+      q.fillStyle = legs; q.fillRect(fx - 11, 170 - tall, 9, 60 + tall); q.fillRect(fx + 2, 170 - tall, 9, 60 + tall);
+      q.fillStyle = shirt; q.beginPath(); q.roundRect(fx - 17, 118 - tall, 34, 58, 8); q.fill();
+      q.fillStyle = '#e4c2a2'; q.beginPath(); q.arc(fx, 102 - tall, 13, 0, PI2); q.fill();
+      q.fillStyle = hair; q.beginPath(); q.arc(fx, 97 - tall, 13, Math.PI, 0); q.fill();
     };
-    fig(66, '#16171b', '#1a1a1e', '#4a3222', 0); p.fillStyle = '#ffd21f'; p.fillRect(56, 128, 6, 4); // Luka
-    fig(120, '#23305a', '#b9ad94', '#3a2a1c', 6); p.fillStyle = '#e6dff0'; p.fillRect(116, 114, 8, 18);  // Rue, blazer
-    fig(174, '#1f6fe0', '#5b7fae', '#5a3b24', -2);                            // Chase
-    const s = document.createElement('canvas'); s.width = s.height = 44; s.getContext('2d').drawImage(c, 0, 0, 44, 44);
-    cx.save(); cx.imageSmoothingQuality = 'high'; cx.filter = 'blur(2px)'; cx.drawImage(s, x + m, y + m, iw, iw); cx.restore();
+    // "two blurry figures in polos and a young man in a blazer": only the two of them are blurred
+    const bc = document.createElement('canvas'); bc.width = bc.height = 240; const bq = bc.getContext('2d');
+    fig(bq, 66, '#16171b', '#1a1a1e', '#4a3222', 0); bq.fillStyle = '#ffd21f'; bq.fillRect(56, 128, 6, 4); // Luka
+    fig(p, 120, '#23305a', '#b9ad94', '#3a2a1c', 6); p.fillStyle = '#e6dff0'; p.fillRect(116, 114, 8, 18);  // Rue, blazer
+    fig(bq, 174, '#1f6fe0', '#5b7fae', '#5a3b24', -2);                            // Chase
+    const s = document.createElement('canvas'); s.width = s.height = 44; s.getContext('2d').drawImage(bc, 0, 0, 44, 44);
+    cx.save(); cx.imageSmoothingQuality = 'high'; cx.filter = 'blur(1px)'; cx.drawImage(c, x + m, y + m, iw, iw);
+    cx.filter = 'blur(2px)'; cx.drawImage(s, x + m, y + m, iw, iw); cx.restore();
     cx.fillStyle = 'rgba(245,238,220,.2)'; cx.fillRect(x + m, y + m, iw, iw);
     const dev = d.dev ?? 1;
     if (dev < 1) { cx.fillStyle = `rgba(48,56,46,${(1 - dev) * 0.95})`; cx.fillRect(x + m, y + m, iw, iw); }

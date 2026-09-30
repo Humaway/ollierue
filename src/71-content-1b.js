@@ -51,8 +51,14 @@
       if (cv && cv.getContext) { const x = cv.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, cv.width, cv.height); t.needsUpdate = true; }
     });
   }
-  // A censored line's pop-up stays where it landed, OK or no OK: JARVIS puts it straight back on the speaker's face.
-  const stamp = (id) => ({ popup: { msg: 'Language detected. This interaction has been flagged for coaching.', icon: 'warn', buttons: ['OK'], at: { actor: id }, ding: false } });
+  // A censored line (the engine's censor): typed up to its dash, then JARVIS slams the pop-up over the speaker's face.
+  // It stays where it landed, OK or no OK: dismissed, JARVIS puts it straight back.
+  const LANG = 'Language detected. This interaction has been flagged for coaching.';
+  function cuss(id, text, msg = LANG) {
+    let n = 0;
+    return [{ do: (c) => { n = c.popup.count(); } }, { say: id, text, censor: msg },
+      { do: (c) => { if (!c.flow.skipping && c.popup.count() <= n) c.popup({ msg, icon: 'warn', buttons: ['OK'], at: { actor: id }, ding: false }); } }];
+  }
   const mood = (id, m) => ({ do: (c) => { const a = c.world.actor(id); if (a) a.mood = m; } });
 
   // The JARVIS screen on the counter monitor, as a readable INSERT card.
@@ -251,7 +257,7 @@
     { place: 'chase', at: 'counter_chase' },
     // [ECU] The cursor over the opt-in box. YES. Click.
     MON({ mode: 'optin', time: '10:09', zoom: 2.2 }, 26),
-    { wait: 1.1 },
+    { wait: 0.6 },
     jmon({ mode: 'optin', time: '10:09', zoom: 2.2, click: true }), { sfx: 'tick' }, { flag: 'seen_optin' },
     { wait: 0.7 },
     // [JARVIS-CAM] Chase's face, lit by the screen. The screen goes black, and so does he.
@@ -265,24 +271,25 @@
     { say: 'chase', text: 'Sorry for the w—' },
     // MARGARET (gathering her handbag, kindly)
     { env: 'day' }, MARGARET,
-    { prop: 'margaret_phone', visible: false },
+    { act: [['margaret', 'give', { dur: 1.2 }]] },   // she reaches for her phone and bag; the phone leaves the counter
+    { do: (c) => { c.wait(0.6).then(() => { const o = c.world.prop('margaret_phone'); if (o) o.visible = false; }); } },
     { say: 'margaret', text: "I'll come back when your computer's feeling better.", speed: 'slow' },
     // [WIDE · locked, from the back of the store] She pats his hand and walks out into the sunlight. The doors slide shut.
     { place: 'chase', at: [4.3, 0, -9.8, 0] }, { place: 'margaret', at: [4.3, 0, -8.2, PI] },
     { expr: [['chase', 'sad']] },
     EXIT_WIDE,
     { act: [['margaret', 'give', { dur: 1.3 }]] },
-    { wait: 1.4 },
-    { move: 'margaret', to: [1.6, 0, -4.2], speed: 1.5 },           // round the display table, then out through the doors
-    { move: 'margaret', to: [-2.0, 0, -1.2, 0], speed: 1.5 },
-    { move: 'margaret', to: [-2.0, 0, 2.4, 0], speed: 1.5 },
-    { despawn: 'margaret' },
-    { sfx: 'door_slide', vol: 0.6 },
-    { wait: 1.2 },
+    { wait: 0.8 },
+    { move: 'margaret', to: [1.6, 0, -4.2], speed: 1.6 },           // past the display table to the doors (they open for her)
+    { move: 'margaret', to: [-1.6, 0, -2.2], speed: 1.6 },
+    { sfx: 'door_slide', vol: 0.5 },
+    { move: 'margaret', to: [-2.0, 0, 14.0, 0], speed: 1.6, nowait: true },   // out into the sun, still walking as we cut
+    { wait: 2.0 },
     // [TOP-DOWN · directly above Chase] His head goes into his hands. On the dead monitor beside him, one last pop-up:
-    // "Thanks for your patience!"
+    // "Thanks for your patience!" (the doors slide shut over the cut)
     { place: 'chase', at: SLUMP },
     TOP_DOWN,
+    { despawn: 'margaret' }, { sfx: 'door_slide', vol: 0.45 },
     { act: [['chase', 'head_hands']] },
     { wait: 1.6 },
     { do: patience },
@@ -318,10 +325,9 @@
     { shot: 'CAM', pos: [-2.1, 0.16, -4.0], look: [-2.0, 0.25, -1.0], fov: 45, to: { look: [-2.0, 1.72, -1.8] }, dur: 2.2 },
     { wait: 2.3 },
     { say: 'dazza', text: "Mate, I need a SIM swap. I've got a slab to pour at ten." },
-    { move: 'dazza', to: 'counter_customer', nowait: true },
+    { place: 'dazza', at: 'counter_customer' },   // (under the cut) he's at the counter by the time we're on Luka
     { shot: 'CLOSE', on: 'luka' },
     { say: 'luka', text: "It's ten-forty." },
-    { move: 'dazza', to: 'counter_customer' },
     { shot: 'MID', on: 'dazza' },
     { say: 'dazza', text: "Then I'm late for a slab, aren't I." },
     // [MID · Luka cracks his knuckles, Chase small over his shoulder]
@@ -330,9 +336,8 @@
     { wait: 0.3 }, { sfx: 'tick', vol: 0.7 }, { wait: 0.15 }, { sfx: 'tick', vol: 0.7 },
     { wait: 0.4 },
     { say: 'luka', text: 'Two minutes.' },
-    { face: 'luka', to: 'chase' },
+    { act: [['luka', 'glance', { dur: 2.4, yaw: -0.85 }]] },   // (to Chase) over his shoulder: his face stays to the lens
     { say: 'luka', text: 'Watch and learn. Alt-tab, clear cache, log out, log in, pray.' },
-    { face: 'luka', to: 0 },
     // the Restart Ritual, over Luka's shoulder
     { music: 'reddy_frantic', fade: 0.6 },
     into(OTS_LUKA),
@@ -360,21 +365,23 @@
     { say: 'dazza', text: "I'm going to the servo." },
     // [WIDE · locked] Dazza leaves. The doors close. Nobody moves.
     EXIT_WIDE,
-    { move: 'dazza', to: [-2.0, 0, -1.2, 0], speed: 2.2 },
-    { move: 'dazza', to: [-2.0, 0, 4.2, 0], speed: 2.2 },
-    { despawn: 'dazza' },
-    { sfx: 'door_slide', vol: 0.6 },
-    { wait: 2.2 },
+    { move: 'dazza', to: [-1.6, 0, -2.2], speed: 2.2 },
+    { sfx: 'door_slide', vol: 0.5 },
+    { move: 'dazza', to: [-2.2, 0, 16.0, 0], speed: 2.2, nowait: true },   // off across the car park
+    { wait: 2.1 },
+    { sfx: 'door_slide', vol: 0.6 },   // the doors close behind him
+    { wait: 1.5 },
     // [JARVIS-CAM · locked] The boys framed through the monitor. Each insult is cut off by a pop-up that lands on the
     // speaker's face, in rhythm, like a drum pattern.
     { shot: 'JARVIS', at: 'monitor', on: ['luka', 'chase'], locked: true },
+    { despawn: 'dazza' },
     { expr: [['luka', 'determined'], ['chase', 'determined']] },
-    { say: 'luka', text: 'You absolute useless piece of—', censor: true }, stamp('luka'),
+    ...cuss('luka', 'You absolute useless piece of—'),
     { say: 'chase', text: 'It can detect SWEARING?', auto: 0.7 },
-    { say: 'luka', text: "It can't detect a driver's licence, but it can detect—", censor: true }, stamp('luka'),
-    { say: 'chase', text: 'You overpriced, over-updated—', censor: true }, stamp('chase'),
-    { say: 'luka', text: '—twenty-four-password—', censor: true }, stamp('luka'),
-    { say: 'chase', text: '—margarine-generating—', censor: true }, stamp('chase'),
+    ...cuss('luka', "It can't detect a driver's licence, but it can detect—", 'Language detected.'),
+    ...cuss('chase', 'You overpriced, over-updated—'),
+    ...cuss('luka', '—twenty-four-password—'),
+    ...cuss('chase', '—margarine-generating—'),
     // The pop-ups stack until the frame is solid white.
     { do: (c) => storm(c, ['Language detected.'], [0.25, 0.25, 0.125, 0.125, 0.25, 0.125, 0.125, 0.125, 0.125, 0.0625, 0.0625, 0.0625, 0.0625, 0.0625, 0.0625, 0.0625, 0.0625], true) },
     { fade: 'out', dur: 0.2, color: '#fff' },
@@ -388,10 +395,10 @@
     { fade: 'in', dur: 0.35 },
     // One last one: "Thanks for your feedback! Rate your experience: ★☆☆☆☆"
     { popup: { msg: 'Thanks for your feedback! Rate your experience: ★☆☆☆☆', icon: 'info', buttons: [], at: 'center', dur: 2.6 } },
-    { wait: 2.8 },
+    { wait: 1.4 },
     // [PULL OUT · slowly from the white screen] To reveal them both, slumped, one either side of the monitor.
     { shot: 'CAM', pos: [6.35, 1.28, -9.3], look: [6.35, 1.28, -9.0], fov: 44, to: { pos: [6.4, 1.85, -12.5], look: [6.4, 0.95, -9.4], fov: 46 }, dur: 6, ease: 'out' },
-    { wait: 4 },
+    { wait: 2.1 },
     { say: 'chase', text: "…That ding's a good sample, though.", speed: 'slow' },
     { say: 'luka', text: "Don't." },
     // [CLOSE · Luka, from slightly above] He twists his lanyard.

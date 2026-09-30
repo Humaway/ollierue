@@ -572,7 +572,7 @@ const { AUDIO, sfx, music } = (() => {
   function player(pattern, samples, mode, o = {}) {
     const has = (k) => !!(samples && samples.includes(k)), out = gainTo(o.dest || busM, 1);
     const pat = pattern || DEF;
-    const p = { pat, mode, out, onStep: o.onStep, onEnd: o.onEnd, bars: o.bars || 0, done: false, endAt: 0, i: 0,
+    const p = { pat, mode, out, onStep: o.onStep, onEnd: o.onEnd, bars: o.bars || 0, ending: !!o.ending, done: false, endAt: 0, i: 0,
       t: ctx.currentTime + 0.06, bell: has('bell'), trill: has('trill'), lane: [], lg: [], rain: null,
       lead: pat[3] && pat[3].some(Boolean) ? pat[3] : DEF[3], // the breakdown never goes silent
       qt: new Float64Array(64), qi: new Int8Array(64), qh: 0, qn: 0 };
@@ -588,18 +588,19 @@ const { AUDIO, sfx, music } = (() => {
     pump();
     return p;
   }
+  function coda(p, t) { // the ending: the D chord, the bass, and the bell if Chase recorded it
+    play(S.pad[0], t, p.padG, 1); play(S.bass[0], t, p.bassG, 1);
+    if (p.bell) play(B.bell, t, p.fxG, 1);
+    p.done = true; p.endAt = t + (p.bell ? 7 : 4);
+  }
   function step(p, t) {
     const bar = p.i >> 4, s = p.i & 15, k = bar - p.first, pat = p.pat, band = p.mode !== 'seq';
     let sec = 1; // 0 intro, 1 full, 2 breakdown
     if (bar < p.first) sec = 0;
     else if (p.mode === 'credits') {
-      if (k >= 20) { // ending: the D chord, the bass, and the bell if Chase recorded it
-        play(S.pad[0], t, p.padG, 1); play(S.bass[0], t, p.bassG, 1);
-        if (p.bell) play(B.bell, t, p.fxG, 1);
-        p.done = true; p.endAt = t + (p.bell ? 7 : 4); return;
-      }
+      if (k >= 20) { coda(p, t); return; }
       if (k >= 8 && k < 12) sec = 2;
-    } else if (p.bars && k >= p.bars) { p.done = true; p.endAt = t + 1; return; }
+    } else if (p.bars && k >= p.bars) { if (p.ending) coda(p, t); else { p.done = true; p.endAt = t + 1; } return; }
     if (s === 0) {
       if (sec === 0) { if (p.trill) play(B.trill, t, p.fxG, 1); if (band) play(S.pad[0], t, p.padG, 1); }
       else {
@@ -916,7 +917,7 @@ const { AUDIO, sfx, music } = (() => {
     blip, loop,
     song(pattern, o = {}) {
       if (!ctx) return { stop() {} };
-      const p = player(pattern, o.samples ?? (typeof state !== 'undefined' && state ? state.samples : []), o.bars ? 'loop' : 'credits', { onEnd: o.onEnd, bars: o.bars });
+      const p = player(pattern, o.samples ?? (typeof state !== 'undefined' && state ? state.samples : []), o.bars ? 'loop' : 'credits', { onEnd: o.onEnd, bars: o.bars, ending: o.ending });
       return { stop: () => stopPlayer(p, 0.3) };
     },
     seq: {

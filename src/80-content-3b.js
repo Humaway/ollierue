@@ -253,17 +253,17 @@
     // [MID · the door opens] Chase holds out the microcassette.
     { do: lean(0) }, { place: 'rue19', at: STEP_UP }, { act: [['rue19', 'idle']] }, { expr: [['rue19', 'neutral']] },
     { do: (c) => { const d = c.world.prop('door'); if (d) d.userData.open = true; hand(c, 'chase', 'micro'); } },
-    { sfx: 'creak' },
+    { sfx: 'creak' }, { flag: 'note_recorded' },
     { shot: 'CAM', pos: [-10.25, 1.9, 3.5], look: [-12.7, 1.72, 3.1], fov: 40 },
     { wait: 0.5 },
     { move: 'chase', to: DOORWAY },
     { act: [['chase', 'give', { dur: 3.5 }]] },
-    say('chase', 'Give it to us. After. We won\'t know who you are.'),
+    slow('chase', 'Give it to us. After. We won\'t know who you are.'),
     { do: (c) => hand(c, 'rue19', 'micro') },
     say('rue19', 'You\'ll know who I am. I\'m on mugs.'),
     // He puts the tape in his breast pocket, like it's nothing.
     { act: [['rue19', 'lanyard', { dur: 1.2, loop: false, still: true }]] },
-    { wait: 0.8 }, { do: (c) => drop(c, 'rue19') }, { wait: 0.6 },
+    { wait: 0.8 }, { do: (c) => drop(c, 'rue19') }, { flag: 'tape_with_rue' }, { wait: 0.6 },
     // [WIDE · the basement lab, 3 am] One green screen lit. Luka asleep on the floor, Declan asleep at his bench.
     { fade: 'out', dur: 0.6 },
     { do: (c) => lamp(c, false) },
@@ -288,22 +288,17 @@
     { wait: 1.0 },
   ];
 
-  // He presses record on a blank cassette, then play: the track plays all the way through to an ending.
+  // He presses record on a blank cassette, then play: the track plays all the way through to an ending
+  // (eight bars, then the D chord, the bass and, if he recorded it, the bell). One shot: a very slow push on the recorder.
   async function playSong(c) {
     if (c.flow.skipping) return;
     let ended = false;
-    const h = c.AUDIO && c.AUDIO.song ? c.AUDIO.song(state.pattern, { samples: state.samples, bars: 8, onEnd: () => { ended = true; } }) : null;
-    const t0 = clock.t, max = SONG + (state.samples.includes('trill') ? SONG / 8 : 0) + 1.5;
-    // the song over three angles: the recorder turning, Chase listening (slow push), the sleeping lab
-    const shots = [[0, REC, onRec], [2.4, { shot: 'CAM', pos: GREEN.pos, look: GREEN.look, fov: 40, to: { pos: [-3.62, 1.52, 11.02], look: GREEN.look, fov: 30 }, dur: 9 }, onFace],
-      [11.5, LAB_WIDE, onFace], [17, GREEN, onFace]];
-    let k = 0;
-    await waitUntil(() => {
-      const t = clock.t - t0;
-      while (k < shots.length && t >= shots[k][0]) { c.cam.shot(shots[k][1]); shots[k++][2](c); }
-      return ended || c.flow.skipping || t >= max || (TEST.auto && t >= 4);
-    });
-    if (!ended && h) h.stop();
+    const h = c.AUDIO && c.AUDIO.song ? c.AUDIO.song(state.pattern, { samples: state.samples, bars: 8, ending: true, onEnd: () => { ended = true; } }) : null;
+    const hit = SONG + (state.samples.includes('trill') ? SONG / 8 : 0), t0 = clock.t, r0 = performance.now();
+    c.cam.shot({ shot: 'CAM', pos: REC.from, look: REC.at, fov: REC.fov, to: { pos: [-3.17, 1.16, 12.15], look: REC.at, fov: 30 }, dur: hit + 2.5, ease: 'linear' });
+    await waitUntil(() => ended || c.flow.skipping || clock.t - t0 >= hit + 2.2 || (TEST.auto && clock.t - t0 >= 4));
+    // the last chord rings on under the next shot; cut only when the ending never played (skip, NO held, autoplay)
+    if (!ended && h && (performance.now() - r0) / 1000 < hit + 0.3) h.stop();
   }
 
   CUTSCENES['3.3_finished'] = [
@@ -321,7 +316,7 @@
     { wait: 0.8 }, { do: phones(false) },
     { act: [['chase', 'sit', { h: 0.48 }]] },
     { wait: 1.6 },
-    slow('chase', '…It\'s finished.'),
+    slow('chase', '…It\'s finished.'), { flag: 'song_finished' },
     // [INSERT] Felt-tip on the cassette label: PUDDING.
     { act: [['chase', 'write']] },
     { shot: 'INSERT', at: [-3.3, 0.8, 11.55], from: [-2.95, 1.32, 11.9], fov: 34, card: ['label', { text: 'PUDDING' }] },
@@ -368,6 +363,7 @@
   const OVERCAST = Object.assign({}, SETS.square.env.sunday, { rain: 0 });   // the rain has stopped; the sun isn't out yet
   const BELL = { vol: 0.55 };
   const DIALING = { shot: 'CAM', pos: [-22.4, 2.0, 6.7], look: [-21.1, 1.35, 5.5], fov: 50 };
+  const PUD = { shot: 'CAM', pos: [-23.0, 1.95, 3.5], look: [-22.42, 1.62, 4.32], fov: 38 };   // [CLOSE · Chase's hand] across, between him and Rue
   const HANDS = { shot: 'CAM', pos: [-22.05, 2.2, 5.46], look: [-20.95, 1.3, 5.48], fov: 40 };   // [TWO-SHOT · tight, their hands side by side on the machine]
 
   function squareDress(c) {
@@ -413,10 +409,22 @@
   // STORAGE FULL, again: the same pop-up, but its NO is greyed out (drawn inert: YES here is the final YES, held).
   function storage(c) {
     const p = c.popup({ msg: 'STORAGE FULL. To complete this call, the following will be cleared: 21 days, 0 hours, 0 minutes. Continue?',
-      title: 'STORAGE FULL', icon: 'warn', buttons: [], cls: 'big', at: [0.5, 0.4] });
+      title: 'STORAGE FULL', icon: 'warn', buttons: [], cls: 'big', at: [0.5, 0.43] });
     const row = p.el.querySelector('.jv-btns');
     if (!row) return;
     for (const t of ['YES', 'NO']) { const b = document.createElement('span'); b.className = 'jv-b'; b.textContent = t; if (t === 'NO') b.style.cssText = 'opacity:.4;filter:grayscale(1);background:#9aa0aa;border-color:#8a9099'; row.append(b); }
+  }
+  // [JARVIS-CAM] 3.2's framing: from behind the machine's screen, the lens widened until both faces fit (as the engine does for an anchor)
+  const JF = new THREE.Vector3(-20.6, 1.52, 5.49), JL = new THREE.Vector3(), JD = new THREE.Vector3(), JE = new THREE.Vector3(), JH = [new THREE.Vector3(), new THREE.Vector3()];
+  function jarvisCam(c) {
+    if (c.flow.skipping) return;
+    let n = 0; JL.set(0, 0, 0);
+    for (const id of ['chase', 'luka']) { const a = actor(c, id); if (a) { a.headPos(JH[n]); JL.add(JH[n++]); } }
+    if (!n) JL.set(-21.28, 2.13, 5.49); else JL.divideScalar(n);
+    JL.y -= 0.05; JD.subVectors(JL, JF).normalize();
+    let ang = 0; for (let i = 0; i < n; i++) ang = Math.max(ang, JD.angleTo(JE.subVectors(JH[i], JF)));
+    const el = renderer.domElement, vf = 2 * Math.atan(Math.tan(ang + 0.14) / (el.clientWidth / Math.max(1, el.clientHeight))) * 180 / PI;
+    c.cam.shot({ shot: 'JARVIS', at: JL.toArray(), from: JF.toArray(), fov: Math.min(70, Math.max(56, vf)) });
   }
   // the Walkman tape into Des's bin
   function binDrop(c) {
@@ -448,7 +456,7 @@
       ['minigame', 'final_yes', {}],
       ['cutscene', '3.4_ring'],
     ],
-    grants: { flags: { at_lodge: true, lanyard_given: true, pudding_given: true, optus_named: true, called_home: true }, battery: 4, bars: 4 },
+    grants: { flags: { at_lodge: true, lanyard_given: true, pudding_given: true, optus_named: true, called_home: true }, removeItems: ['lanyard', 'badge'], battery: 4, bars: 4 },
   };
 
   CUTSCENES['3.4_crane'] = [
@@ -473,10 +481,10 @@
     { wait: 0.6 },
     say('des', 'Yous\'ll be back?'),
     { face: 'luka', to: 'des' },
-    say('luka', 'Not the way you mean.'),
+    slow('luka', 'Not the way you mean.'),
     { act: [['des', 'nod', { dur: 0.9 }]] },
     say('des', 'Tea for the road?'),
-    say('luka', 'Always.'),
+    slow('luka', 'Always.'),
     { face: 'luka', to: 'rue19' },
     // [CLOSE · Luka's hands] He takes off his lanyard and holds it for a second.
     { shot: 'CAM', pos: [-22.88, 2.15, 4.4], look: [-22.15, 1.62, 4.62], fov: 42 },
@@ -488,32 +496,32 @@
     { move: 'luka', to: LUKA_ON },
     { do: lanyardOn },
     { wait: 2.2 },
-    { act: [['luka', 'idle']] }, { flag: 'lanyard_given' },
+    { act: [['luka', 'idle']] }, { flag: 'lanyard_given' }, { item: 'lanyard', remove: true }, { item: 'badge', remove: true },
     say('rue19', 'What\'s this for?'),
-    say('luka', 'So you don\'t forget our names.'),
+    slow('luka', 'So you don\'t forget our names.'),
     { act: [['rue19', 'look_down', { dur: 1.2, loop: false }]] },
     say('rue19', 'It\'s only got one name on it.'),
     say('luka', 'His never came.'),
     say('chase', 'EIGHT MONTHS.'),
     { act: [['rue19', 'lanyard', { still: true }]] },   // (touching the badge)
-    say('rue19', 'I\'ll remember his.'),
+    slow('rue19', 'I\'ll remember his.'),
     { act: [['rue19', 'idle']] },
     { move: 'luka', to: LUKA_BACK, nowait: true },
-    // [CLOSE · Chase's hand] He holds out a cassette. PUDDING, in felt-tip.
+    // [CLOSE · Chase's hand] He holds out a cassette. PUDDING, in felt-tip. (the label card on the first line; one frame for all five)
+    { face: 'rue19', to: 'chase' },
     { do: (c) => hand(c, 'chase', 'pudding') },
     { act: [['chase', 'give', { dur: 9 }]] },
-    { shot: 'INSERT', at: 'chase', card: ['label', { text: 'PUDDING' }] },
-    say('chase', 'For the quiet bits.'),
-    { shot: 'CLOSE', on: 'rue19' },
+    Object.assign({ card: ['label', { text: 'PUDDING' }] }, PUD),
+    slow('chase', 'For the quiet bits.'),
+    PUD,
     say('rue19', 'What\'s Pudding?'),
     say('chase', 'Me.'),
     say('rue19', 'Why Pudding?'),
     say('chase', 'Long story.'),
-    { do: (c) => hand(c, 'rue19', 'pudding') },
-    { act: [['chase', 'idle']] },
     // [INSERT] Rue ejects "Winning Is a Decision" from his Walkman, drops it in Des's bin and slots in PUDDING.
     { act: [['rue19', 'tap']] },
     { shot: 'INSERT', at: 'rue19', card: ['tape', { text: 'Winning Is a Decision' }] },
+    { do: (c) => hand(c, 'rue19', 'pudding') }, { flag: 'pudding_given' }, { act: [['chase', 'idle']] },   // (the tape changes hands under the cut)
     { sfx: 'cassette_eject' }, { wait: 1.4 },
     { shot: 'INSERT', at: [-21.5, 0.8, 4.45], from: [-21.95, 1.45, 5.1], fov: 45 },
     { wait: 0.3 }, { do: binDrop }, { wait: 0.5 }, { sfx: 'thud', vol: 0.35 }, { wait: 0.9 },
@@ -535,9 +543,10 @@
     say('chase', 'Opt us in, Rue.'),
     // [CLOSE · Rue, slow push-in]
     { shot: 'CLOSE', on: 'rue19', move: 'push', amount: 0.75, dur: 10 },
-    slow('rue19', 'Opt… us… in. ^ Optus. ^'),
-    { do: (c) => { const a = actor(c, 'rue19'); if (a) { a.setExpr('neutral'); a.rig.face.mouth('smile'); } } },   // the first real smile he's had all game
-    slow('rue19', '…I like the sound of that.'),
+    slow('rue19', 'Opt… us… in. ^ Optus.', { auto: 0.5 }),
+    { do: (c) => { const a = actor(c, 'rue19'); if (a) { a.setExpr('neutral'); a.rig.face.mouth('smile'); } } },   // (beat) the first real smile he's had all game
+    { wait: 0.8 },
+    slow('rue19', '…I like the sound of that.'), { flag: 'optus_named' },
     // [TWO-SHOT · locked] A stare, 2 seconds. Luka and Chase turn to each other. Behind them, Des sips his tea.
     { shot: 'CAM', pos: [-24.8, 2.0, 5.7], look: [-22.6, 1.85, 4.55], fov: 42 },
     { face: 'luka', to: 'chase' }, { face: 'chase', to: 'luka' },
@@ -557,15 +566,15 @@
   CUTSCENES['3.4_storage'] = [
     { act: [['chase', 'idle']] },
     // [JARVIS-CAM] The pop-up again: "STORAGE FULL. To complete this call, the following will be cleared: 21 days, 0 hours, 0 minutes. Continue? [YES] [NO]". This time NO is greyed out.
-    { shot: 'JARVIS', at: [-21.28, 2.08, 5.49], from: [-20.6, 1.52, 5.49], fov: 56 },   // (behind the machine's screen, out at both faces)
+    { do: jarvisCam },   // (behind the machine's screen, out at both faces)
     { do: storage },
     { wait: 2.6 },
     // [TWO-SHOT · tight, their hands side by side on the machine]
     { act: [['luka', 'type'], ['chase', 'type']] },
     { popup: null, clear: true },
     HANDS,
-    say('luka', 'Together?'),
-    say('chase', 'Together.'),
+    slow('luka', 'Together?'),
+    slow('chase', 'Together.'),
   ];
 
   CUTSCENES['3.4_ring'] = [
@@ -575,6 +584,7 @@
     { sfx: 'trill' },
     { wait: 2.2 },
     say('operator', 'You have a reverse-charge call from Chase and Luka, Optus Redcliffe. Will you accept the charges?'),
+    { flag: 'called_home' },
     { wait: 3 },
     // [WIDE] White fills the lodge.
     LODGE_WIDE,

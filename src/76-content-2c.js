@@ -156,12 +156,15 @@
 
   CUTSCENES['2.7_call'] = [
     { music: null, fade: 1 },
+    { letterbox: false },   // the record prompt sits where the bottom bar would be
     LEFT,
     { do: ringing },
+    { letterbox: true },
     // [SPLIT SCREEN] Left: the lodge in grey rain, the boys crowded round the machine. Right: Reddy in 2026 sunshine;
     // behind Luke the store calendar reads 7 OCT, a MISSING poster with their staff photos over his shoulder.
     { spawn: 'luke', at: 'luke_phone', set: 'reddy' },
     { act: [['luke', 'phone']] },
+    { hud: null },          // the 1987 HUD would sit over the 2026 half
     { split: { left: { set: 'square', shot: LEFT }, right: { set: 'reddy', shot: RIGHT } } },
     { sfx: 'clunk', vol: 0.35 },
     { wait: 0.6 },
@@ -179,6 +182,7 @@
     { split: null, slide: true },
     { wait: 0.8 },
     { despawn: 'luke' },
+    { hud: { battery: 4, bars: 1 } },
     { expr: [['luka', 'stunned'], ['chase', 'stunned']] },
     // [INSERT] The prepaid display phone pops and smokes. HUD: 1%.
     { shot: 'INSERT', at: [-20.9, 1.34, 5.62], from: [-21.02, 1.78, 6.55], fov: 34 },
@@ -209,7 +213,7 @@
     { place: 'luka', at: [-22.5, 0.46, 4.7, 1.85] },
     { do: (c) => { actor(c, 'luka').mood = 'anxious'; } },
     { expr: [['luka', 'worried']] },
-    { shot: 'CLOSE', on: 'luka', angle: 'high', move: 'push', amount: 0.7, dur: 10 },
+    { shot: 'MID', on: 'luka', angle: 'high', move: 'push', amount: 0.85, dur: 10 },
     say('luka', "I said we'd be back before lunch."),
     say('chase', 'You did say that.'),
     say('luka', 'We are going to be in so much trouble.'),
@@ -224,9 +228,10 @@
       { do: (c) => c.runSteps(ORBITS) }] },
     say('luka', 'Someone alive in 2026, who knows us, who keeps a number working for thirty-nine years and actually picks up.'),
     // [WIDE · Des in the foreground, not looking up from his paper]
-    { place: 'chase', at: [-22.6, 0.46, 4.85, -1.2] }, { place: 'luka', at: [-22.6, 0.46, 5.65, -1.75] },
+    // (Des a step nearer the lens, 3/4 to it and turned from the boys; they look at him past his shoulder)
+    { place: 'chase', at: [-22.6, 0.46, 4.85, -1.2] }, { place: 'luka', at: [-22.6, 0.46, 5.65, -1.75] }, { place: 'des', at: [-24.17, 0.46, 5.39, -1.69] },
     { do: (c) => { glanceAt(c, 'chase', 'des', 4); glanceAt(c, 'luka', 'des', 4); } },
-    { shot: 'CAM', pos: [-24.95, 1.72, 5.2], look: [-22.5, 1.64, 5.25], fov: 50 },
+    { shot: 'CAM', pos: [-24.95, 1.85, 3.55], look: [-22.9, 1.55, 5.75], fov: 55 },
     say('des', "I'll be pushing up daisies by then, lads. Don't look at me."),
     // [TWO-SHOT · they turn, slowly, to the window]
     { shot: 'CAM', pos: [-20.72, 1.96, 5.25], look: [-22.6, 1.78, 5.25], fov: 56 },
@@ -251,6 +256,7 @@
   // =================================================================== 2.8 — "The Deal"
   // House Six: up the stairwell (rail cams rise floor by floor), along the corridor to Rue's door.
   const STAIRS = [[-2.4, -9, -3.1], [3.1, -6, -3.1], [3.1, -3, 3.1], [-3.1, 0, 3.1], [-9.8, 0, 3.1]];
+  const inRoom = () => world.setId === 'rooms' && !!player.actor && player.actor.pos.x < -12.6;
   const inCorridor = () => world.setId === 'rooms' && !!world.actor('luka') && world.actor('luka').pos.x < -9;
   function roomDress(c) {
     if (c.world.setId !== 'rooms') return;
@@ -275,6 +281,10 @@
       { id: 'knock', at: 'corridor_door', r: 1.1, verb: 'Knock', once: true, flag: 'knocked_rue',
         when: () => world.setId === 'rooms',
         steps: [{ face: 'luka', to: -H }, { act: [['luka', 'knock']] }, { sfx: 'knock' }, { wait: 1.1 }] },
+      // after the deal, inside Rue's room (§7: the kettle save point and the typewriter)
+      { id: 'kettle', at: 'kettle', r: 1.1, verb: 'Use', kettle: true, when: inRoom },
+      { id: 'typewriter', at: 'typewriter', r: 1.2, verb: 'Examine', when: inRoom, text: "You'd need an Ink Ribbon to use this. Luckily, we have kettles." },
+      { id: 'rue_practise', at: 'rue19', r: 1.0, verb: 'Talk', when: inRoom, once: true, flag: 'practise_go', do: () => {} },
     ],
     steps: [
       ['do', (c) => { lodgeDress(c); c.world.preload('rooms'); }],
@@ -288,8 +298,12 @@
       ['steps', [say('rue19', "Buy. Sell. Tell London I'll call them back.", { tag: 'through the door' })]],
       ['roam', { until: 'knocked_rue', auto: (c) => c.hotspots.trigger('knock') }],
       ['objective', null],
+      // after the deal the roam's camera: the whole east half of the room (door, desk, kettle); Chase stays in the doorway
+      ['follow', null], ['cam', 'fixed', { pos: [-17.9, 2.4, 0.75], look: [-13.6, 0.85, 4.0], fov: 55 }],
       ['cutscene', '2.8_deal'],
       ['objective', 'Help Rue practise.'],
+      ['roam', { until: 'practise_go', async auto(c) { await c.hotspots.trigger('typewriter'); await c.hotspots.trigger('rue_practise'); } }],
+      ['cam', null],
       ['minigame', 'role_play', {}],
       ['objective', null],
       ['cutscene', '2.8_floor'],
@@ -325,17 +339,17 @@
     // [MID · Rue swivels his chair to face them]
     { shot: 'CAM', pos: [-12.78, 1.82, 3.4], look: [-13.85, 1.62, 3.08], fov: 50 },
     { act: [['rue19', 'sit']] },
-    { wait: 0.3 },
+    { wait: 0.2 },
     { sfx: 'creak', vol: 0.3 },
     { do: (c) => { const r = actor(c, 'rue19'), ch = c.world.prop('desk_chair'); r.face(H, 1.1); tween(c, 1.1, () => { if (ch) ch.rotation.y = r.rotY; }); } },
-    { wait: 1.3 },
+    { wait: 1.2 },
     { expr: [['rue19', 'smug']] },
     // [POV · Rue's, slow pan] The polos. The badge. The desperation. Something calculates.
-    { shot: 'POV', from: 'rue19', at: [-12.3, 1.62, 3.42], move: 'pan', to: [-12.38, 1.52, 2.95], dur: 3.2 },
-    { wait: 3.3 },
-    { shot: 'POV', from: 'rue19', at: [-12.38, 1.52, 2.95], move: 'pan', to: [-12.34, 2.08, 3.16], dur: 2.4 },
+    { shot: 'POV', from: 'rue19', at: [-12.3, 1.62, 3.42], move: 'pan', to: [-12.38, 1.52, 2.95], dur: 1.6 },
+    { wait: 1.6 },
+    { shot: 'POV', from: 'rue19', at: [-12.38, 1.52, 2.95], move: 'pan', to: [-12.34, 2.08, 3.16], dur: 1.4 },
     { expr: [['luka', 'worried'], ['chase', 'worried']] },
-    { wait: 2.6 },
+    { wait: 1.4 },
     say('rue19', '…You two sell things. In the future.'),
     { expr: [['luka', 'neutral'], ['chase', 'neutral']] },
     say('luka', 'Phones. Plans. Internet.'),
@@ -347,12 +361,12 @@
     say('rue19', "The Enterprise Prize is in eight days. Fenwick's coming over from London. If I win, I'm in the City by summer. Help me win. ^ And I'll think about your phone."),
     say('luka', 'Think about it.'),
     say('rue19', "That's more than anyone else gets."),
-    { shot: 'CAM', pos: [-13.4, 2.02, 3.18], look: [-12.3, 1.95, 3.16], fov: 52 },   // TWO-SHOT: the boys in the doorway
     say('chase', 'Deal.'),
     say('luka', 'Chase—', { act: 'glance' }),
     say('chase', 'He said think. Think is basically yes.'),
-    { shot: 'CAM', pos: [-12.95, 1.84, 3.26], look: [-13.75, 1.75, 3.1], fov: 40 },
     say('rue19', "It's really not."),
+    // Luka steps into the room (out of the LOW's frame) for the roam; Chase stays in the doorway
+    { place: 'luka', at: [-13.05, 0.4, 2.2, -0.7] }, { act: [['luka', 'idle']] },
   ];
 
   // [WIDE · from the bed, looking down] Two coats laid out on the floor: part of the deal.
@@ -371,8 +385,8 @@
   // [WIDE · locked, floor level] One setup for the whole scene: the boys under their coats, heads toward camera, Rue's bed
   // a dark shape above them with his back turned, the streetlight's rain-shadows crawling over all three. The camera pushes
   // in so slowly nobody notices, until the frame holds only the two of them. One cut, at the very end.
-  const FLOOR = { pos: [-14.9, 1.0, 3.1], look: [-17.4, 0.74, 3.1], fov: 50 };
-  const FLOOR_END = { pos: [-15.32, 0.96, 3.1], look: [-16.65, 0.5, 3.1], fov: 46 };
+  const FLOOR = { pos: [-14.95, 0.78, 3.1], look: [-17.3, 0.45, 3.1], fov: 50 };   // = the set's floor_wide anchor
+  const FLOOR_END = { pos: [-15.3, 0.8, 3.1], look: [-16.75, 0.47, 3.1], fov: 46 };
   const PUSH = { shot: 'CAM', pos: FLOOR.pos, look: FLOOR.look, fov: FLOOR.fov, to: FLOOR_END, dur: 80, ease: 'linear' };
   function bedDress(c) {
     const P = (n) => c.world.prop(n);
@@ -393,6 +407,12 @@
     cm.getWorldDirection(d);
     if (p.distanceTo(new THREE.Vector3(...FLOOR_END.pos)) < 0.02) return;
     c.cam.shot({ shot: 'CAM', pos: [p.x, p.y, p.z], look: [p.x + d.x * 1.4, p.y + d.y * 1.4, p.z + d.z * 1.4], fov: cm.fov, to: FLOOR_END, dur: 2.4 });
+  }
+  // "They both laugh, quietly": mouths going and a few soft voice blips each
+  function laugh(c) {
+    if (c.flow.skipping) return;
+    for (const id of ['chase', 'luka']) { c.world.talk(id, true); setTimeout(() => c.world.talk(id, false), 900); }
+    for (const [id, t] of [['chase', 0], ['luka', 0.15], ['chase', 0.35], ['luka', 0.5], ['chase', 0.7]]) setTimeout(() => AUDIO.blip(id, false), t * 1000);
   }
   // [CLOSE · Rue, in the dark] from the wall side: his eyes are open. They have been the whole time.
   function rueInTheDark(c) {
@@ -451,20 +471,21 @@
     slow('luka', "It WAS genius. It was also the dumbest thing anyone's ever done."),
     // They both laugh, quietly. Then it's quiet.
     { expr: [['luka', 'laugh'], ['chase', 'laugh']] },
-    { wait: 1.6 },
+    { do: laugh },
+    { wait: 1.3 },
     { expr: [['luka', 'neutral'], ['chase', 'neutral']] },
-    { wait: 1.4 },
+    { wait: 1.3 },
     slow('chase', 'Night, Luka.'),
     slow('luka', 'Night, mate.'),
     // The push-in finishes on the two of them. Two seconds of dark.
     { do: settlePush },
-    { wait: 2.6 },
+    { wait: 1.4 },
     { fade: 'out', dur: 0.9 },
     { wait: 2 },
     // [CLOSE · Rue, in the dark] The only cut in the scene.
     { do: rueInTheDark },
     { fade: 'in', dur: 0.6 },
-    { wait: 0.8 },
+    { wait: 0.3 },
     slow('rue19', 'Would yous two shut up. Some of us have a future.'),
     slow('chase', 'We literally have a—', { tag: 'off' }),
     slow('rue19', 'SHUT UP.'),

@@ -13,6 +13,10 @@
     d = Math.atan2(Math.sin(d), Math.cos(d));
     return a.play('glance', { dur: 1.3, yaw: Math.max(-1.3, Math.min(1.3, d)) });
   }
+  // the camera catches the glance: start it without waiting, snap while the head is turned (0.33–0.98 s)
+  const glanceSnap = (name, after = 0.45) => [{ do: (c) => { glance(c); } }, { wait: 0.55 }, snap(name), { wait: after }];
+  // arms folded (Bernie, 2.2): the clap pose held still, hands together at the chest
+  if (!ANIMS.fold) { ANIMS.fold = (r, t, p) => ANIMS.clap(r, 0, p); ANIMS.fold.upper = true; }
   const habit = (c) => { const a = c.world.actor('luka'); if (a) a.habit = 'glance'; };
   const sitThen = (id, anim) => [{ act: [[id, 'sit']] }, { wait: 0.2 }, { act: [[id, anim]] }];   // seated upper-body anims need `seated` first
   // a prop eased from one position to another (the tween removes itself; instant while skipping)
@@ -55,7 +59,7 @@
   // the phones smoke on the floor, then again on the desk inside Des's newspaper
   const puff = (at, n = 22) => ({ do: (c) => c.world.puff(at, { n, color: 0x9a9a9a, speed: 0.35, life: 2.4 }) });
   const tidy = { do: (c) => { for (const n of ['swivel_chair', 'yes_sign']) { const o = c.world.prop(n); if (o) o.visible = false; } } };
-  const phoneCard = (tone, battery) => ['phone', { tone, battery, status: 'noservice', lines: ['No Service'] }];
+  const phoneCard = (tone) => ['phone', { tone, battery: 1, status: 'noservice', lines: ['No Service'] }];   // their phones are on 1%
   // Des's desk-phone receiver: a cream 1987 handset in his right hand ('phone' shows rig.attach.brick when there is one)
   function handset(c) {
     const d = c.world.actor('des');
@@ -66,13 +70,13 @@
     const h = b.done(); h.name = 'handset'; h.visible = false;
     d.rig.attach.gripR.add(h); d.rig.attach.brick = h;
   }
-  // [ECU] close on the receiver's mouthpiece grille, the rain on the window behind Des
+  // [ECU] close on the receiver's grille, looking east past it to the rain on the lodge window (Des faces his desk)
   function receiverECU(c) {
     const h = c.world.actor('des')?.rig.attach.brick;
     if (!h) return c.cam.shot({ shot: 'INSERT', at: 'receiver' });
     h.updateWorldMatrix(true, false);
     const m = h.localToWorld(new THREE.Vector3(0, 0.13, 0));
-    c.cam.shot({ shot: 'CAM', pos: [m.x - 0.15, m.y - 0.05, m.z - 0.3], look: [m.x + 0.02, m.y + 0.02, m.z], fov: 30 });
+    c.cam.shot({ shot: 'CAM', pos: [m.x - 0.3, m.y - 0.02, m.z + 0.07], look: [m.x + 0.05, m.y + 0.02, m.z], fov: 30 });
   }
   // the masthead of Des's paper, torn round the phones: the date big enough to read
   CARDS.masthead = (cx, w, h, d) => {
@@ -91,19 +95,24 @@
   SCENES['2.1'] = {
     title: 'Are Yous the Call?', set: 'square', env: 'rain', time: 'Tue 6 Oct 1987, 11:58',
     playable: ['luka'], swap: false, hud: null, music: null,      // the HUD appears for the first time at the machine INSERT
-    spawn: { des: [-21.5, 0.46, 5.0, -H], luka: 'lodge_floor_luka', chase: 'lodge_floor_chase' },
+    spawn: { des: [-21.5, 0.46, 5.0, H], luka: 'lodge_floor_luka', chase: 'lodge_floor_chase' },
     hotspots: [
       // --- hide the machine
       { id: 'cupboard', at: [-24.7, 0.46, 3.4], r: 0.8, verb: 'Open', once: true, flag: 'machine_hidden',
         when: (s) => !s.flags.machine_hidden,
-        ask: { q: 'Put it in?', noDisabled: true, yes: [
+        steps: [
+          { do: (c) => {   // "Put it in? [YES]": one button (NO is disabled and taken off the box)
+            const p = c.ask('Put it in?', { noDisabled: true });
+            document.querySelector('#dlg .opts')?.children[1]?.remove();
+            return p;
+          } },
           { face: 'luka', to: [-24.75, 2.72] },
           { prop: 'cupboard_door', rotY: 1.9 }, { sfx: 'creak' }, { wait: 0.5 },
           { hold: 'luka', prop: null }, { prop: 'machine', pos: MACHINE_CUPBOARD, fn: (o) => o.rotation.set(0, 0, 0) },
           { wait: 0.4 }, { prop: 'cupboard_door', rotY: 0 }, { sfx: 'thud', vol: 0.5 },
           { objective: 'Find Rue.' },
           { hud: { bars: 2 }, anim: 1 },
-        ] } },
+        ] },
       { id: 'kettle', at: 'kettle', r: 0.75, verb: 'Use', kettle: true },
       // --- examine lines (Luka)
       { id: 'pigeonholes', at: [-24.75, 0.46, 5.0], r: 0.75, text: 'Hundreds of little wooden boxes full of letters. Imagine getting a letter.' },
@@ -116,7 +125,9 @@
       { id: 'newspaper', at: [-20.95, 0.46, 3.95], r: 0.6,
         steps: [{ say: 'luka', text: "Everyone's leaving. London, Boston, Sydney." }, { say: 'chase', text: 'We came the other way.' }] },
       { id: 'photo', at: [-22.1, 0.46, 7.0], r: 0.6, text: 'A bell tower in the middle of the square. Des has three photos of it.' },
-      { id: 'des', at: 'des', r: 1.2, verb: 'Talk', by: 'des', text: ['Tea?', "Mind the cobbles, they're wet.", 'That thing of yours is safe. Nobody opens the cupboard.'] },
+      { id: 'des', at: 'des', r: 1.2, verb: 'Talk', by: 'des', when: (s) => !s.flags.machine_hidden, text: ['Tea?', "Mind the cobbles, they're wet."] },
+      { id: 'des_hidden', at: 'des', r: 1.2, verb: 'Talk', by: 'des', when: (s) => !!s.flags.machine_hidden,
+        text: ['Tea?', "Mind the cobbles, they're wet.", 'That thing of yours is safe. Nobody opens the cupboard.'] },
       // --- the lodge door (1987: heavy wood, creaks)
       { id: 'lodge_exit', at: [-21.3, 0.46, 2.75], r: 0.6, verb: 'Open', when: (s) => !!s.flags.machine_hidden, door: { to: 'lodge_out', kind: 'wood' } },
       { id: 'lodge_enter', at: [-21.3, 0, 1.5], r: 0.55, verb: 'Open', door: { to: 'lodge_door_in', kind: 'wood' } },
@@ -157,14 +168,15 @@
 
   CUTSCENES['2.1_landing'] = [
     { fade: 'out', dur: 0 },
+    { flag: 'machine_hidden', value: false },          // Continue from a lodge-kettle save replays 2.1 from here
     { do: landingDress }, { do: handset },
     { act: [['luka', 'lie_tangled'], ['chase', 'lie_tangled'], ['des', 'phone']] },
-    { wait: 0.3 },
+    { title: 'Tuesday, 6 October 1987' },
     // [ECU] A 1987 desk-phone receiver, close on its grille. Rain on the window behind. The last line of Act One, from this end.
     { do: receiverECU },
     { fade: 'in', dur: 0.6 },
     { wait: 1.0 },
-    { say: 'des', text: '…Ah, go on. Yes.' },
+    { say: 'des', text: '…Ah, go on. Yes.', speed: 'slow' },
     { wait: 0.4 },
     // [WIDE · the lodge, cramped] A white flash. When the smoke clears, two men in Optus polos lie tangled on the floor
     // with a swivel chair, a "Yes" sign and four phones. Des is in the foreground, back to camera, still holding the receiver.
@@ -191,18 +203,18 @@
     tidy,
     { place: 'luka', at: [-22.3, 0.46, 5.9, H] }, { place: 'chase', at: [-22.9, 0.46, 5.0, H] },
     { act: [['luka', 'idle'], ['chase', 'idle']] }, { expr: [['luka', 'worried'], ['chase', 'worried']] },
-    { shot: 'INSERT', at: 'luka', card: phoneCard('dark', 38) },
+    { shot: 'INSERT', at: 'luka', card: phoneCard('dark') },
     { say: 'luka', text: 'No service.' },
-    { shot: 'INSERT', at: 'chase', card: phoneCard('light', 61) },
+    { shot: 'INSERT', at: 'chase', card: phoneCard('light') },
     { par: [
       { say: 'chase', text: 'No service. No service. No service. No—' },
       { do: (c) => c.runSteps([
-        { wait: 0.26 }, { shot: 'INSERT', at: MACHINE_FLOOR, from: [-22.7, 1.05, 4.75], card: phoneCard('light', 3) },
-        { wait: 0.26 }, { shot: 'INSERT', at: MACHINE_FLOOR, from: [-23.3, 1.0, 4.6], card: phoneCard('dark', 3) },
-        { wait: 0.26 }, { shot: 'INSERT', at: MACHINE_FLOOR, from: [-22.6, 0.95, 3.9], card: phoneCard('light', 3) },
+        { wait: 0.26 }, { shot: 'INSERT', at: MACHINE_FLOOR, from: [-22.7, 1.05, 4.75], card: phoneCard('light') },
+        { wait: 0.26 }, { shot: 'INSERT', at: MACHINE_FLOOR, from: [-23.3, 1.0, 4.6], card: phoneCard('dark') },
+        { wait: 0.26 }, { shot: 'INSERT', at: MACHINE_FLOOR, from: [-22.6, 0.95, 3.9], card: phoneCard('light') },
       ]) },
     ] },
-    { shot: 'INSERT', at: MACHINE_FLOOR, from: [-23.2, 1.1, 3.95], card: phoneCard('dark', 3) },
+    { shot: 'INSERT', at: MACHINE_FLOOR, from: [-23.2, 1.1, 3.95], card: phoneCard('dark') },
     { say: 'luka', text: "We're in a black spot." },
     // [CLOSE · Chase, dead serious]
     { expr: [['chase', 'determined']] },
@@ -237,7 +249,7 @@
     { wait: 2.4 },
     // [CLOSE · Luka] He glances at Chase before he speaks. He does this all game, and the camera keeps catching it.
     { shot: 'CLOSE', on: 'luka' },
-    { do: glance }, { wait: 0.55 }, snap('glance_lodge'), { wait: 0.35 },
+    ...glanceSnap('glance_lodge'),
     { say: 'luka', text: '…Can we make it back?', speed: 'slow' },
     // [CLOSE · Chase]
     { shot: 'CLOSE', on: 'chase' },
@@ -346,12 +358,13 @@
       ['objective', 'Find Rue.'],
       ['roam', {
         until: ['met_bernie', 'saw_noticeboard'],
-        hint: { after: 120, steps: [{ do: () => objective(state.flags.met_bernie ? 'Find Rue. Try the noticeboard under the arches.' : 'Find Rue. Try the Buttery.') }] },
+        hint: { after: 120, steps: [{ if: (s) => !s.flags.met_bernie,     // a short nudge; the objective stays "Find Rue."
+          then: [{ say: 'chase', text: "I need a cup of tea. Where's the café?" }],
+          else: [{ say: 'luka', text: "There's a noticeboard under the arches." }] }] },
         async auto(c) {
           for (const id of ['cobbles', 'student_1', 'bicycles', 'buttery_door', 'bernie', 'bernie_try', 'bernie_try', 'urn', 'buttery_exit', 'noticeboard']) await c.hotspots.trigger(id);
         },
       }],
-      ['objective', 'Find Rue: Business Studies, Arts Building, 2 pm.'],
       ['roam', {   // the Campanile, triggered while crossing the square toward the Arts Building
         until: () => { const a = world.actor(state.active); return inSquare() && !!a && (a.pos.x * a.pos.x + a.pos.z * a.pos.z < 110 || a.pos.z < -9); },
         async auto(c) { const a = c.world.actor(state.active); await a.moveTo([6, 0, -6]); },
@@ -392,6 +405,7 @@
   CUTSCENES['2.2_bernie2'] = [
     // [WIDE] Chase taps his phone against a 1987 till, harder each time. Bernie watches with her arms folded.
     { place: 'chase', at: 'counter_front' }, { place: 'luka', at: [-3.85, 0, 1.55, 0.35] }, { face: 'bernie', to: 'chase' },
+    { act: [['bernie', 'fold']] },
     { do: (c) => { const a = c.world.actor('chase'); if (a && a.rig.attach.phone) a.rig.attach.phone.visible = true; } },
     { shot: 'CAM', pos: [0.1, 1.75, 2.2], look: [-3.4, 1.3, 2.8], fov: 52 },
     { act: [['chase', 'give', { dur: 0.7 }]] }, { wait: 0.35 }, { sfx: 'knock', vol: 0.25 }, { wait: 0.6 },
@@ -401,7 +415,7 @@
     { say: 'luka', text: "He's trying to pay." },
     { say: 'bernie', text: 'With a calculator?' },
     { do: (c) => { const a = c.world.actor('chase'); if (a && a.rig.attach.phone) a.rig.attach.phone.visible = false; } },
-    { place: 'luka', at: 'counter_front2' },
+    { place: 'luka', at: 'counter_front2' }, { act: [['bernie', 'idle']] },
     // [CLOSE · Bernie] She looks them over: soaked, in matching polos, "Yes" on both.
     BERNIE_CLOSE,
     { face: 'bernie', to: 'luka', dur: 0.8 }, { wait: 0.9 }, { face: 'bernie', to: 'chase', dur: 0.8 }, { wait: 1.0 },
@@ -427,7 +441,7 @@
     { do: glance },
     { say: 'luka', text: "It's 1987, mate. Everything's the original." },
     { shot: 'CLOSE', on: 'chase', locked: true },
-    { expr: [['chase', 'neutral']] },
+    { expr: [['chase', 'stunned']] },                                  // awed
     { say: 'chase', text: "…Everything's the original.", speed: 'slow', tag: 'quietly' },
   ];
 
@@ -470,9 +484,13 @@
     // [TRACK · alongside Chase] He walks straight under the Campanile. The camera tilts up to the bell as he passes beneath. It doesn't ring.
     { move: 'chase', to: [0, 0, -6.2], nowait: true },          // Luka hangs back: Chase goes under on his own
     { shot: 'MID', on: 'chase', move: 'track', track: 'alongside', dist: 2.2, dur: 30 },
-    { wait: 3.3 },
-    { shot: 'CAM', pos: [-1.1, 1.5, -0.2], look: [0, 1.6, 0.9], fov: 50, to: { pos: [-1.1, 1.5, -0.2], look: [0, 10.4, 0.1], fov: 50 }, dur: 2.2 },
-    { wait: 2.6 },
+    { wait: 3.4 },
+    { do: (c) => {   // no cut: from wherever the track is, glide in under the arch and tilt up to the bell
+      const k = c.world.camera, p = k.position, d = k.getWorldDirection(new THREE.Vector3());
+      c.cam.shot({ shot: 'CAM', pos: [p.x, p.y, p.z], look: [p.x + d.x * 2.4, p.y + d.y * 2.4, p.z + d.z * 2.4], fov: k.fov,
+        to: { pos: [-1.1, 1.5, -0.2], look: [0, 10.4, 0.1], fov: 50 }, dur: 2.4 });
+    } },
+    { wait: 2.8 },
     { despawn: 'des' },
     // [CLOSE · Chase] Slightly disappointed.
     { place: 'chase', at: [0, 0, -6.2, PI] }, { act: [['chase', 'idle']] },
@@ -519,14 +537,23 @@
     { act: [['luka', 'reading'], ['chase', 'look_down']] },
     // [WIDE · from the back row, down the tiers to the lectern]
     { shot: 'SET', cam: 'back_row' },
-    { say: 'hartigan', text: 'Good afternoon. Roll.' },
+    { say: 'hartigan', text: 'Good afternoon. Roll.', name: 'PROFESSOR HARTIGAN' },
     { act: [['hartigan', 'look_down']] },
     // [TRACK · along the row, face by face] Each student says "Here" as the camera passes, until it reaches the boys, hunched behind one textbook.
-    { shot: 'CAM', pos: [5.7, 3.95, 5.35], look: [5.2, 3.8, 6.64], fov: 40, to: { pos: [2.95, 3.95, 5.35], look: [2.5, 3.72, 6.64] }, dur: 5.2, ease: 'linear' },
-    { par: [{ wait: 5.8 }, { do: (c) => c.runSteps([     // the track always lands on the boys before the cut
-      { say: 'hartigan', text: 'Brennan. Byrne. Cullen. Doyle. Fitzgerald. Kavanagh…', auto: 0.3 },
-      ...[0, 1, 2, 3].flatMap(() => [{ say: 'student', text: 'Here', auto: 0.2 }, { wait: 0.2 }]),   // one per face the camera passes
-    ]) }] },
+    // Hartigan pauses after each name ('^') and that student answers "Here" as the camera passes their face (x 5.2 4.6 4.0 3.4).
+    { shot: 'CAM', pos: [6.0, 3.95, 5.35], look: [5.5, 3.8, 6.64], fov: 40, to: { pos: [2.95, 3.95, 5.35], look: [2.5, 3.72, 6.64] }, dur: 4.4, ease: 'linear' },
+    { par: [
+      { wait: 4.9 },                                                   // the track always lands on the boys before the cut
+      { say: 'hartigan', text: 'Brennan. ^Byrne. ^Cullen. ^Doyle. ^Fitzgerald. Kavanagh…', auto: 0.4 },
+      { do: async (c) => {   // "Here" in each beat: the typewriter reaches beat k after (name length + 1) / cps
+        const cps = CONFIG.text[options.textSpeed] || CONFIG.text.normal;
+        for (const n of ['Brennan. ', 'Byrne. ', 'Cullen. ', 'Doyle. ']) {
+          await c.wait((n.length + 1) / cps + 0.25);
+          for (let k = 0; k < 2; k++) { if (!c.flow.skipping && c.AUDIO) c.AUDIO.blip('student'); await c.wait(0.13); }   // "He-re"
+          await c.wait(CONFIG.beat - 0.51);
+        }
+      } },
+    ] },
     // [TWO-SHOT · tight]
     { shot: 'TWO', on: ['luka', 'chase'], dist: 1.3 },
     { say: 'chase', text: 'Listen for Rue.', tag: 'whisper' },
@@ -535,9 +562,9 @@
     { shot: 'INSERT', at: 'register' },
     { say: 'hartigan', text: "…Murphy. Murphy. The other Murphy. O'Brien. O'Sullivan. Quigley. Quinn. Ryan. Sheehan. Walsh. Whelan." },
     // [CLOSE · Hartigan] He closes the register.
-    { act: [['hartigan', 'idle']] },
-    { shot: 'CLOSE', on: 'hartigan' },
-    { sfx: 'thud', vol: 0.5 },
+    { shot: 'CLOSE', on: 'hartigan', dist: 1.5 },                  // (still writing: hands on the register)
+    { wait: 0.3 }, { act: [['hartigan', 'give', { dur: 0.9 }]] }, { wait: 0.5 }, { sfx: 'thud', vol: 0.5 },   // flips it shut
+    { wait: 0.4 }, { act: [['hartigan', 'idle']] }, { wait: 0.2 },
     { say: 'hartigan', text: "Grand. Everyone's here except the usual." },
     // [TWO-SHOT · tight]
     { shot: 'TWO', on: ['luka', 'chase'], dist: 1.3 },
@@ -550,14 +577,19 @@
     { wait: 1.4 },
     // [TRACK · along the row at knee height] "Sorry. Sorry. Sorry." Knees. Bags. A dropped calculator. Luka glances back to
     // check Chase is behind him. A pair of reading glasses left on the end of the bench gets knocked and slides under a seat.
+    // The lens dollies back along the row ahead of them at knee height; Luka stops once to glance back at Chase.
     { place: 'luka', at: [2.2, Y6, Z6 + 0.45, -H] }, { place: 'chase', at: [2.8, Y6, Z6 + 0.45, -H] },
-    { shot: 'CAM', pos: [-0.6, Y6 + 0.6, Z6 + 0.3], look: [2.0, Y6 + 1.2, Z6 + 0.5], fov: 55, to: { pos: [-0.45, Y6 + 0.6, Z6 + 0.3], look: [1.3, Y6 + 1.15, Z6 + 0.5], fov: 55 }, dur: 4.2 },
-    { move: 'luka', to: [1.0, Y6, Z6 + 0.45, -H], speed: 0.45, nowait: true },
-    { move: 'chase', to: [1.8, Y6, Z6 + 0.45, -H], speed: 0.45, nowait: true },
+    { shot: 'CAM', pos: [0.3, Y6 + 0.85, Z6 + 0.38], look: [2.4, Y6 + 1.3, Z6 + 0.45], fov: 55,
+      to: { pos: [-0.55, Y6 + 0.85, Z6 + 0.38], look: [1.1, Y6 + 1.35, Z6 + 0.45], fov: 55 }, dur: 5.4 },
+    { move: 'luka', to: [1.6, Y6, Z6 + 0.45, -H], speed: 0.45, nowait: true },
+    { move: 'chase', to: [2.3, Y6, Z6 + 0.45, -H], speed: 0.45, nowait: true },
     { say: 'luka', text: 'Sorry. Sorry. Sorry.' },
     { sfx: 'clunk', vol: 0.4 },                                  // a dropped calculator
-    { do: glance }, { wait: 0.6 }, snap('glance_theatre'),
-    { wait: 0.9 },
+    { move: 'luka', to: [1.6, Y6, Z6 + 0.45, -H], speed: 0.45 },  // (waits until he has stopped)
+    ...glanceSnap('glance_theatre', 0.6),
+    { move: 'luka', to: [1.0, Y6, Z6 + 0.45, -H], speed: 0.45, nowait: true },
+    { move: 'chase', to: [1.8, Y6, Z6 + 0.45, -H], speed: 0.45, nowait: true },
+    { wait: 1.1 },
     { prop: 'glasses', fn: (o) => o.userData.knock && o.userData.knock() },
     { wait: 1.0 },
     // [WIDE · from behind the boys] At the bottom of the theatre, the door bangs open. A soaked nineteen-year-old in an
@@ -565,13 +597,14 @@
     { place: 'luka', at: [1.0, Y6, Z6 + 0.45, -H] }, { place: 'chase', at: [1.8, Y6, Z6 + 0.45, -H] },
     { spawn: 'rue19', at: [-4.9, 0, -4.35, 0] },
     { do: (c) => { const r = c.world.actor('rue19'); if (r) { r.setExpr('smug'); if (r.rig.attach.brick) r.rig.attach.brick.visible = true; } } },
-    { shot: 'CAM', pos: [3.4, Y6 + 1.9, Z6 + 1.7], look: [-4.9, 1.1, -4.4], fov: 38 },
+    { shot: 'CAM', pos: [3.4, Y6 + 1.9, Z6 + 1.7], look: [-3.6, 1.9, 0.6], fov: 38 },   // Rue on the right third, the tiers between
     { prop: 'bottom_door', fn: (o) => { o.userData.open = true; } }, { sfx: 'thud' }, { sfx: 'creak', vol: 0.6 },
     { do: (c) => c.world.puff([-4.9, 1.6, -4.2], { n: 8, color: 0xb8c8d8, speed: 0.1, life: 0.9, gravity: 4 }) },
     { wait: 1.8 },
     // [CLOSE · Hartigan, not looking up]
     { act: [['hartigan', 'look_down']] },
     { shot: 'CLOSE', on: 'hartigan' },
+    { prop: 'crowd', fn: (o) => o.userData.hideNear && o.userData.hideNear(1.6, Z6 + 0.64) },   // (under the cut) a free place behind Chase
     { say: 'hartigan', text: 'Ah, Mr Rue. Thought we\'d never see you.' },
     // [TWO-SHOT · from the front] The boys freeze mid-shuffle. Slowly, in perfect sync, their heads turn.
     { shot: 'CAM', pos: [0.2, Y6 + 1.5, 4.39], look: [1.4, Y6 + 1.45, Z6 + 0.45], fov: 45 },
@@ -605,12 +638,11 @@
     { face: 'luka', to: PI }, { face: 'chase', to: PI },
     { shot: 'CAM', pos: [0.45, 2.3, -3.6], look: [1.8, 3.8, 6.5], fov: 28 },
     { wait: 0.8 },
-    { act: [['luka', 'duck'], ['chase', 'duck']] },
-    { wait: 1.2 },
-    { move: 'chase', to: [2.2, Y6, Z6 + 0.64], speed: 0.4, nowait: true },
-    { place: 'luka', at: [1.0, Y6, Z6 + 0.64, PI] }, { act: [['luka', 'sit']] },
-    { wait: 1.1 }, { face: 'chase', to: PI, dur: 0.3 }, { act: [['chase', 'sit']] },
-    { wait: 1.8 },
+    { act: [['luka', 'duck'], ['chase', 'duck']] },               // down together, in sync, very slowly
+    { wait: 1.4 },
+    { place: 'luka', at: [1.0, Y6, Z6 + 0.64, PI] }, { place: 'chase', at: [1.6, Y6, Z6 + 0.64, PI] },
+    { act: [['luka', 'sit'], ['chase', 'sit']] },
+    { wait: 2.0 },
     // The lecture ends. Title card: 3:00 pm.
     { fade: 'out', dur: 0.8 },
     { title: '3:00 pm' },

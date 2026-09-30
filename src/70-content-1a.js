@@ -46,6 +46,47 @@
     const d = P('backroom_door'); if (d) { d.rotation.y = 0; d.userData.open = undefined; }
   }
   const earbudOut = (c) => { const a = c.world.actor('chase'); if (a && a.rig.attach.earbud) a.hold(a.rig.attach.earbud, 'L'); };
+  // "head nodding" to the demo (88 bpm) on the walk in: an upper-body loop, so the legs keep walking.
+  if (!ANIMS.bop) {
+    ANIMS.bop = (r, t, p) => {
+      if (!p.walk) ANIMS.idle(r, t, p);
+      const k = (1 - Math.cos(t * 2 * PI * 88 / 60)) / 2;
+      r.parts.head.rotation.x += 0.16 * k; r.parts.neck.rotation.x += 0.05 * k;
+    };
+    ANIMS.bop.upper = true;
+  }
+
+  // A wide lens that keeps its 16:9 composition on narrower screens (16:10 laptops, 4:3 tablets): the vertical
+  // fov showing at least the width `fov` shows at 16:9. Read at shot time (a getter on the shot step).
+  const fit = (fov) => Math.min(80, Math.max(fov, 2 * Math.atan(Math.tan(fov * PI / 360) * 16 / 9 * innerHeight / innerWidth) * 180 / PI));
+
+  // The staff video plays: Rue's mouth moves on the TV for `sec` s (repaints of the set's TV canvas), then the
+  // frame holds on his smile. Stopping it is the freeze.
+  function rueTalks(c, sec) {
+    const tv = c.world.prop('tv_screen');
+    let map = null;
+    if (tv) tv.traverse((o) => { if (o.material && o.material.map) map = o.material.map; });
+    if (!map || c.flow.skipping) return;
+    let t = 0, n = -1;
+    const f = (dt) => {
+      if ((t += dt) >= sec || c.flow.skipping) { removeUpdate(f); tv.userData.show('rue'); return; }
+      const k = Math.floor(t / 0.13);
+      if (k === n) return;
+      n = k; tv.userData.show('rue');                        // closed: the smile
+      if (k % 2) return;
+      const x = map.image.getContext('2d');                   // open (paintTV leaves its 128x96 transform set)
+      x.fillStyle = '#4a1f1a'; x.beginPath(); x.arc(64, 51, 5 + (k % 3) * 0.6, 0.2, PI - 0.2); x.closePath(); x.fill();   // the smile, open
+      map.needsUpdate = true;
+    };
+    addUpdate(f);
+  }
+  // "A JARVIS pop-up slides over his face" (no OK: it sits there till the cut)
+  function videoError(c) {
+    if (c.flow.skipping) return;
+    const p = c.popup({ msg: 'Video could not be played.', icon: 'error', buttons: [], at: [0.5, 0.44] });
+    p.el.firstChild.animate([{ transform: 'translateY(-40vh)', opacity: 0 }, { opacity: 1, offset: 0.3 }, { transform: 'none', opacity: 1 }],
+      { duration: 650, easing: 'ease-out' });
+  }
 
   // the three opening duties (objective.list), ticked from state.flags
   function duties() {
@@ -118,8 +159,11 @@
     { fade: 'in', dur: 0.5 },
     { wait: 2.5 },
     // [INSERT · slow track along the desk] Walkman, PUDDING cassette, the incident report, a Polaroid face down; the framed lanyard behind.
-    { shot: 'CAM', pos: [1.3, 0.97, -1.1], look: [0.55, 0.84, -1.62], fov: 34, to: { pos: [-0.05, 0.97, -1.0], look: [-0.9, 0.86, -1.2], fov: 40 }, dur: 7 },
-    { wait: 7 },
+    // One continuous move that eases through the set's `cassette` lens, so the felt-tip label reads upright.
+    { shot: 'CAM', pos: [1.3, 0.97, -1.1], look: [0.55, 0.84, -1.62], fov: 34, to: { pos: [0.17, 1.04, -1.0], look: [0.15, 0.8, -1.36], fov: 32 }, dur: 3.5, ease: 'out' },
+    { wait: 3.5 },
+    { shot: 'CAM', pos: [0.17, 1.04, -1.0], look: [0.15, 0.8, -1.36], fov: 32, to: { pos: [-0.05, 0.97, -1.0], look: [-0.9, 0.95, -1.22], fov: 40 }, dur: 3.5, ease: 'in' },
+    { wait: 3.5 },
     // [WIDE · high, from the far corner] Rue, small behind a big desk. Two empty chairs. The city lights up behind the glass.
     { shot: 'SET', cam: 'corner_high' },
     { env: 'dawn', dur: 12 },
@@ -219,6 +263,7 @@
     { do: (c) => { const a = c.world.actor('luka'); if (a) a.mood = null; } },
     // [CRANE · down out of a blazing blue sky] past the Yes Optus sign to the car park, shimmering with heat. The demo plays.
     { music: 'demo', fade: 0.3 },
+    { act: [['chase', 'bop']] },                            // head nodding till the earbud comes out
     { move: 'chase', to: 'carpark_door', nowait: true, face: false },
     { shot: 'CAM', pos: [-2.0, 30, 30], look: [-2.0, 50, -20], fov: 50, to: { pos: [-3.2, 2.2, 22], look: [-2.0, 2.6, 1.0], fov: 45 }, dur: 7 },
     { wait: 7 },
@@ -230,11 +275,12 @@
     { move: 'chase', to: 'door_in', face: false },   // (already facing in: see report re moveTo)
     { act: [['chase', 'glance', { dur: 0.8, yaw: 0.4 }]] },
     { do: earbudOut },
+    { act: [['chase', 'idle']] },
     { music: null, cut: true },
     { wait: 1.2 },                                           // store silence: fluorescent hum, the aircon
     // [WIDE · low, from behind the counter] Luka foreground, back to camera, at the monitor; Chase deep in the background at the door.
     { face: 'chase', to: 'luka' },
-    { shot: 'CAM', pos: [5.5, 1.1, -12.2], look: [4.6, 1.35, -2.2], fov: 50 },
+    { shot: 'CAM', pos: [5.5, 1.1, -12.2], look: [4.6, 1.35, -2.2], get fov() { return fit(50); } },
     { say: 'chase', text: 'Morning.' },
     { say: 'luka', text: 'Morning. Was that the new Pudding track?' },
     { say: 'chase', text: "It's a demo." },
@@ -288,18 +334,23 @@
     { env: { hemi: [0x9aa6c0, 0x2a2a30, 0.45], dir: [0xffe6c2, 0.3] }, dur: 0.8 },   // lights low for the video
     // [OTS · behind both] The boys dark shapes in the foreground; between them the small TV: Rue, 58, warmly lit.
     { shot: 'CAM', pos: [2.7, 1.6, -26.7], look: [9.9, 1.6, -26.4], fov: 45 },
+    { do: (c) => rueTalks(c, 2.4) },
     { say: 'rue58', text: "…and I know our systems aren't always perfect. But none of this works without you. Every single one of you.", tag: 'on video' },
     // [PUSH IN · slow, into the TV until the screen fills the frame]
     { shot: 'CAM', pos: [9.0, 1.75, -26.2], look: [9.92, 1.815, -26.2], fov: 32, to: { pos: [9.63, 1.815, -26.2], look: [9.92, 1.815, -26.2], fov: 30 }, dur: 4.5 },
+    { do: (c) => rueTalks(c, 0.8) },
     { par: [{ say: 'rue58', text: 'Thank you for saying yes.', tag: 'on video' }, { wait: 4.5 }] },
     // [TWO-SHOT · from the TV's side] Unimpressed, on opposite edges: Luka against the door frame, Chase leaning on a shelf.
-    { shot: 'CAM', pos: [10.1, 1.65, -27.0], look: [7.1, 1.35, -26.8], fov: 56 },   // TWO-SHOT, wide from beside the TV (a fitted TWO lands behind the wall)
+    // Wide from beside the TV, aimed between them (a fitted TWO lands behind the wall); the lens widens on narrow screens.
+    { shot: 'CAM', pos: [10.25, 1.55, -26.75], look: [7.15, 1.2, -26.75], get fov() { return fit(60); } },
     { say: 'chase', text: "He says that like he's ever used JARVIS." },
     { say: 'luka', text: "He's the CEO, mate. He doesn't use things. Things get used for him." },
     { say: 'chase', text: 'Must be nice.' },
     // [INSERT] The video freezes on Rue's smile. A JARVIS pop-up slides over his face.
     { shot: 'CAM', pos: [9.63, 1.815, -26.2], look: [9.92, 1.815, -26.2], fov: 30 },
-    { popup: { msg: 'Video could not be played.', icon: 'error', buttons: [], at: [0.5, 0.44], shake: true } },   // no OK: it sits there till the cut
+    { do: (c) => rueTalks(c, 0.55) },
+    { wait: 0.9 },                                           // ...and it freezes on his smile
+    { do: videoError },
     { flag: 'seen_video' },
     { wait: 1.2 },
     // From the shop floor, a chime: "JARVIS is ready!"

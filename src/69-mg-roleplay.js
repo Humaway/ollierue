@@ -15,7 +15,7 @@ MINIGAMES.role_play = (() => {
     { hat: 'cap', open: 'I just want to call my mum from the bus.', steps: [
       [['rue19', '…Hello. Welcome. To my room.']],
       [['rue19', 'What do you… need the phone for.']],
-      [cust("My mum worries. I ring her from the bus so she knows I'm alive."), ['rue19', '…Right.', { tag: 'quieter' }]],
+      [cust("My mum worries. I ring her from the bus so she knows I'm alive."), ['rue19', '…Right.', { tag: 'quieter', speed: 'slow' }]],
       [['rue19', "Then you want the cheap one. With the big buttons. ^ That's the whole pitch?"], ['luka', "That's the whole pitch."]],
     ] },
     { hat: 'helmet', open: "I'm a courier. I need to know where my next job is.", steps: [

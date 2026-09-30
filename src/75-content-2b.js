@@ -9,7 +9,7 @@
 
   // ---------------------------------------------------------- cards and items
   // The Bug List as written in 1.6, on the back of this week's targets (the skull shows through).
-  const LIST = { items: [], skull: true };
+  const LIST = { title: 'JARVIS — bugs', items: [], skull: true };   // the same sheet as 1.6's card
   const fillList = () => {
     const ids = state.bugs && state.bugs.length ? state.bugs : ['popups', 'restarts', 'margarine', 'optin', 'sure'];
     LIST.items = ids.map((id) => (BUGS.find((b) => b.id === id) || {}).text).filter(Boolean).concat(DOOR_BUG);
@@ -108,13 +108,14 @@
     const d = c.world.spawn('des', 'lodge_des_chair'); d.play('sit', { h: 0.46 });
     for (const n of ['bike', 'bike_chain']) { const o = c.world.prop(n); if (o) o.visible = !f.part_bike; }
   }
+  const RIG = { built: false };   // this run of 2.6 has reached the bike rig
   // the lab: Declan at his bench, taken things gone, the rig once it's built, Luka on it between sessions
   function labDress(c) {
     if (c.world.setId !== 'lab') return;
     const f = state.flags, P = (n) => c.world.prop(n);
     const t = P('transformer'); if (t) t.visible = !f.part_transformer;
     const r = P('recorder'); if (r) r.visible = !has('recorder');
-    const b = P('bike_rig'); if (b) b.visible = !!f.charger_done;
+    const b = P('bike_rig'); if (b) b.visible = RIG.built;   // (not from charger_done: a Continue replays the scene from its start)
     const dr = P('lab_door'); if (dr && f.knocked) dr.userData.open = true;
     c.world.spawn('declan', 'declan_bench').play('sit', { h: 0.48 });
     if (f.resting) { const l = c.world.spawn('luka', 'bike_rig'); l.play('pedal', { speed: 0.35 }); }
@@ -217,7 +218,7 @@
       }],
       ['objective', 'Check on the machine.'],
       ['set', 'square', { env: 'rain', spawn: { luka: [-21.3, 0.46, 3.4, 0], chase: [-21.1, 0.46, 2.75, 0] } }],
-      ['do', (c) => { squareDress(c); unsit(c, 'luka', 'chase'); actor(c, 'luka').habit = 'glance'; }],
+      ['do', (c) => { squareDress(c); unsit(c, 'luka', 'chase'); actor(c, 'luka').habit = 'glance'; c.music('dublin', { fade: 2 }); }],
       ['roam', { until: 'cupboard_open', async auto(c) { await c.hotspots.trigger('kettle'); await c.hotspots.trigger('cupboard'); } }],
       ['cutscene', '2.5_stuck'],
     ],
@@ -227,17 +228,18 @@
   // [TWO-SHOT · locked] the boys side by side across the table facing camera, Rue's profile at the edge of frame (used twice)
   const TWOSHOT = { shot: 'CAM', pos: [7.8, 1.42, -4.38], look: [6.35, 1.08, -2.8], fov: 50 };
   CUTSCENES['2.5_list'] = [
-    { place: 'luka', at: 'rue_table_a' }, { place: 'chase', at: 'rue_table_b' },
-    { act: [['luka', 'sit', { h: 0.46 }], ['chase', 'sit', { h: 0.46 }]] },
     // [WIDE · the Buttery] Everyone crammed at shared tables; Rue alone at a table for four in the far corner, FT and Filofax.
+    // (The boys wait under the lens at the top of the stairs; they sit down with him under the INSERT.)
+    { place: 'luka', at: [-7.9, 1.3, -0.4, H] }, { place: 'chase', at: [-7.9, 1.3, 0.35, H] }, { act: [['luka', 'idle'], ['chase', 'idle']] },
     { shot: 'CAM', pos: [-7.7, 3.1, 1.1], look: [4.8, 0.8, -2.8], fov: 48 },
     { wait: 2 },
     // [INSERT · top-down] The Bug List slaps down on the Filofax.
     { do: fillList },
     { shot: 'INSERT', at: 'rue_filofax', angle: 'top', card: ['list', LIST] },
+    { place: 'luka', at: 'rue_table_a' }, { place: 'chase', at: 'rue_table_b' },
+    { act: [['luka', 'sit', { h: 0.46 }], ['chase', 'sit', { h: 0.46 }]] },
     { sfx: 'thud', vol: 0.7 },
     say('luka', "Five minutes. We'll pay for them."),
-    { shot: 'MID', on: 'rue19' },
     say('rue19', 'With what, the plastic money?'),
     say('chase', 'How do you know about the plastic money?'),
     say('rue19', 'Bernie tells everyone everything.'),
@@ -271,9 +273,11 @@
     // [TWO-SHOT · locked, the boys side by side across the table, facing camera] A stare, 2 seconds. Rue eats a chip.
     TWOSHOT,
     { expr: [['luka', 'stunned'], ['chase', 'stunned']] },
+    { do: (c) => { glanceAt(c, 'luka', 'chase', 2.8); glanceAt(c, 'chase', 'luka', 2.8); } },   // they stare at each other
     { par: [{ stare: 2 }, { do: async (c) => { glanceAt(c, 'rue19', 'luka', 0.7); await c.wait(0.75); glanceAt(c, 'rue19', 'chase', 0.7); await c.wait(0.7); actor(c, 'rue19').play('chew', { dur: 1 }); } }] },
     // [WIDE · exterior] The Buttery from outside, in the rain. A bus goes past. One second.
     { shot: 'INSERT', at: 'exterior' },
+    { do: (c) => { glanceAt(c, 'luka', 'chase', 4.4); glanceAt(c, 'chase', 'luka', 4.4); } },   // (off screen: still staring when we cut back)
     { wait: 0.4 },
     { prop: 'bus', fn: (o) => o.userData.go() },   // it wipes across the lens a third of a second later
     { wait: 0.9 },
@@ -283,13 +287,12 @@
     { wait: 1 },
     { expr: [['luka', 'neutral'], ['chase', 'neutral']] },
     say('luka', "…it's not genius."),
-    // [MID] Rue stands and tucks the list into Chase's pocket. (Framed from over the table so Luka's head stays out of it,
-    // then from Rue's corner as he comes round to Chase.)
-    { shot: 'CLOSE', on: 'rue19', dist: 1.3 },
+    // [MID] Rue stands and tucks the list into Chase's pocket. (One angle over the boys' shoulders, Rue between them; it pans
+    // with him round the end of the table to Chase.)
+    { shot: 'CAM', pos: [6.55, 1.75, -0.35], look: [6.3, 1.15, -3.6], fov: 50, to: { pos: [6.55, 1.75, -0.35], look: [6.75, 1.25, -3.2], fov: 50 }, dur: 3.4 },
     { act: [['rue19', 'stand']] },
     { wait: 0.9 },
     { move: 'rue19', to: [7.45, 0, -3.55] },
-    { shot: 'CAM', pos: [7.7, 1.55, -4.45], look: [6.85, 1.3, -2.45], fov: 50 },
     { move: 'rue19', to: [7.35, 0, -2.3] },
     { face: 'rue19', to: 'chase' },
     { act: [['rue19', 'give']] },
@@ -326,7 +329,7 @@
     { face: 'chase', to: [-22.9, 5.6] },
     { wait: 0.35 },
     { shot: 'POV', from: 'chase', at: 'desk_phone', move: 'pan', to: 'radio', dur: 6 },
-    { wait: 6.2 },
+    { wait: 3.5 },   // the pan keeps moving under the line
     say('chase', 'Luka. I need a USB-C port.'),
     say('luka', "It's 1987."),
     { flag: 'no_usbc' },
@@ -346,6 +349,7 @@
     // [WIDE · locked, long lens from across Front Square] The two of them tiny on the lodge step under the huge arch.
     // Chase head in hands, Luka beside him twisting his lanyard; in the lit window Des puts the kettle on. Hold 3 s, fade.
     // (The lens looks in past the Campanile's north side so the lit window shows too; the crowd is cleared for the hold.)
+    { music: null, fade: 1.5 },
     { place: 'luka', at: 'lodge_step_luka' }, { place: 'chase', at: 'lodge_step_chase' },
     { act: [['luka', 'sit', { h: 0.23 }], ['chase', 'sit', { h: 0.23 }]] },
     { place: 'des', at: [-22.2, 0.46, 5.7, -1.4] },
@@ -402,6 +406,7 @@
       band = [band[0] - 5, band[1] + 5];
     }
     l.play('pedal', { speed: 0.35 });
+    if (n < 3) await c.runSteps([{ timelapse: { dur: 3, cycles: 1, from: 'day', to: 'night' } }]);   // one session a day: night falls, the next day comes
   };
   // between sessions: a short free roam as Chase (Luka stays on the bike)
   const rest = [
@@ -429,9 +434,9 @@
       { id: 'lodge_in', at: 'lodge_out', r: 1.0, verb: 'Open', when: () => inSquare(), door: { to: [-21.3, 0.46, 3.4, 0], kind: 'wood' } },
       { id: 'lodge_exit', at: [-21.3, 0.46, 2.7], r: 0.5, verb: 'Open', when: () => inSquare(), door: { to: 'lodge_out', kind: 'wood' } },
       { id: 'buttery_in', at: 'buttery_door', r: 1.2, verb: 'Go in', when: () => inSquare(),
-        door: { to: { set: 'buttery', mark: 'door_in' }, kind: 'wood' }, do: butteryDress },
+        door: { to: { set: 'buttery', mark: 'door_in' }, kind: 'wood' }, do: (c) => { butteryDress(c); c.music('buttery_radio', { fade: 1 }); } },
       { id: 'buttery_out', at: [-7.65, 1.3, 0], r: 0.9, verb: 'Go out', when: () => inButtery(),
-        door: { to: { set: 'square', mark: [7.27, 0, 13.4, PI] }, kind: 'wood' }, do: squareDress },
+        door: { to: { set: 'square', mark: [7.27, 0, 13.4, PI] }, kind: 'wood' }, do: (c) => { squareDress(c); c.music('dublin', { fade: 2 }); } },
       // --- The Charger
       { id: 'transformer', at: 'transformer', r: 1.3, verb: 'Take', once: true, flag: 'part_transformer', when: (s) => inLab() && !!s.flags.met_declan,
         steps: [say('declan', "Mind it. It's from a train set."), say('chase', "We'll bring it back."), say('declan', "Yous won't."),
@@ -473,7 +478,7 @@
       { id: 'urn', at: 'urn', r: 1.2, verb: 'Use', text: 'Close enough.', kettle: true, when: () => inButtery() },
     ],
     steps: [
-      ['do', (c) => { squareDress(c); c.world.preload('lab'); }],
+      ['do', (c) => { state.flags.resting = false; state.flags.next_session = false; RIG.built = false; squareDress(c); c.world.preload('lab'); }],   // (a kettle save between sessions keeps them)
       ['cutscene', '2.6_des'],
       ['control', 'luka'], ['follow', 'chase'],
       ['objective', 'Find a way to charge the phones.'],
@@ -494,7 +499,7 @@
       ['cutscene', '2.6_timelapse'],
     ],
     grants: { flags: { knocked: true, met_declan: true, part_transformer: true, part_bike: true, part_cable: true, charger_done: true, des_bike: true },
-      items: ['recorder'], battery: 4, bars: 2 },
+      items: ['recorder'], removeItems: ['bug_list'], samples: ['kettle', 'rain', 'till', 'beep', 'dynamo'], battery: 4, bars: 2 },
   };
 
   CUTSCENES['2.6_des'] = [
@@ -586,7 +591,7 @@
     { item: 'transformer', remove: true }, { item: 'cable', remove: true },
     { flag: 'charger_done' },
     { fade: 'out', dur: 0.4 },
-    { prop: 'bike_rig', visible: true },
+    { prop: 'bike_rig', visible: true }, { do: () => { RIG.built = true; } },
     { do: (c) => unsit(c, 'declan') },
     { place: 'declan', at: [4.25, 0, 13.3, -2.0] }, { place: 'chase', at: 'bike_side' }, { place: 'luka', at: [1.3, 0, 12.6, 1.0] },
     { shot: 'INSERT', at: 'bike_rig' },
@@ -604,7 +609,7 @@
     say('chase', 'Second-in-Cycling.'),
   ];
 
-  // [TIME-LAPSE · locked wide, under the basement's high window] Days pass; HUD 1% → 4%. Luka pedals; Chase records the
+  // [TIME-LAPSE · locked wide, under the basement's high window] Days pass (the sessions took HUD 1% → 4%, a day each). Luka pedals; Chase records the
   // machines, the rain at the window, the kettle; later he's at a computer in headphones, typing in notes, and the demo
   // is rebuilt out of three bleeps and a hiss; at another bench Declan reads the Bug List Chase left lying there.
   CUTSCENES['2.6_timelapse'] = [
@@ -614,20 +619,18 @@
     { place: 'luka', at: 'bike_rig' }, { act: [['luka', 'pedal', { speed: 0.9 }]] },
     { place: 'chase', at: [3.9, 0, 8.6, PI] }, REC(true), { act: [['chase', 'give', { dur: 3 }]] },   // the humming machines
     { place: 'declan', at: 'declan_bench' }, { act: [['declan', 'sit', { h: 0.48 }]] },
-    { prop: 'bug_list', visible: true },
-    { hud: { battery: 1, bars: 2 } },
+    { prop: 'bug_list', visible: true },   // (the HUD already reads 4%: each session added its 1%)
     { shot: 'CAM', pos: [7.4, 2.9, 8.0], look: [-0.2, 0.9, 12.8], fov: 58 },
     { fade: 'in', dur: 0.5 },
     { act: [['declan', 'type']] },
     { do: (c) => { SONG.h = c.AUDIO ? c.AUDIO.song(null, { samples: ['rain'], bars: 8 }) : null; } },
     { timelapse: { dur: 13, cycles: 3, from: 'day', to: 'night', keys: [
       { t: 1.4, steps: [snap('pedal')] },
-      { t: 3.0, steps: [{ hud: { battery: 2, bars: 2 } }, { place: 'chase', at: 'window_below' }, { act: [['chase', 'look_up']] }] },   // the rain at the window
+      { t: 3.0, steps: [{ place: 'chase', at: 'window_below' }, { act: [['chase', 'look_up']] }] },   // the rain at the window
       { t: 5.8, steps: [{ place: 'chase', at: [-2.4, 0, 8.25, -2.3] }, { act: [['chase', 'give', { dur: 2 }]] }] },   // the kettle
-      { t: 8.5, steps: [{ hud: { battery: 3, bars: 2 } }, REC(false), PHONES(true), { place: 'chase', at: 'chase_computer' }, { act: [['chase', 'sit', { h: 0.46 }]] }, { wait: 0.05 }, { act: [['chase', 'type']] },
+      { t: 8.5, steps: [REC(false), PHONES(true), { place: 'chase', at: 'chase_computer' }, { act: [['chase', 'sit', { h: 0.46 }]] }, { wait: 0.05 }, { act: [['chase', 'type']] },
         { do: (c) => { const d = actor(c, 'declan'); d.play('reading'); c.wait(0.05).then(() => { if (d.rig.attach.textbook) d.rig.attach.textbook.visible = false; }); } },
         { hold: 'declan', prop: 'bug_list' }] },
-      { t: 11.8, steps: [{ hud: { battery: 4, bars: 2 } }] },
     ] } },
     { hud: { battery: 4, bars: 2 } },
     // [OTS · behind Declan, the list in his hands]

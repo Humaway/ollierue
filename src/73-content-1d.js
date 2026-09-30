@@ -209,18 +209,14 @@
   ];
 
   CUTSCENES['1.6_door'] = [
+    // still the mini-game's top-down on the list (the lines play over the shot above them), Luka writing
     { act: [['luka', 'write']] },
     { face: 'chase', to: 'luka', dur: 0 },
-    { shot: 'CLOSE', on: 'chase' },
+    SHEET_TOP,
     say('chase', 'Door takes nine seconds.'),
-    { face: 'luka', to: 'chase', dur: 0 },
-    { act: [['luka', 'idle']] },
-    { shot: 'CLOSE', on: 'luka' },
     say('luka', "That's not JARVIS."),
-    { shot: 'CLOSE', on: 'chase' },
     say('chase', "Isn't it though?"),
     // [CLOSE · the pen, hovering] He writes it down. "Door takes nine seconds" joins the list.
-    { face: 'luka', to: PI, dur: 0 },
     { do: (c) => { if (!pen) return; pen.visible = true; pen.position.set(PEN_AT[0], PEN_AT[1] + 0.028, PEN_AT[2]); pen.rotation.set(-0.55, 0, -0.35); } },
     PEN_CLOSE,
     { wait: 1.4 },
@@ -283,6 +279,10 @@
     if (a) { a.place(CH_CALL); a.rig.seated = false; a.play('look_down'); }
     if (l) { l.place(LU_CALL); l.face('chase', 0); l.play('look_down'); }
   }
+  async function lean(c) {
+    const a = c.world.actor('chase');
+    for (let i = 1; i <= 8 && a && !c.flow.skipping; i++) { const k = (1 - Math.cos(i / 8 * PI)) / 2; a.place([CH_CALL[0] + 0.08 * k, 0, CH_CALL[2] - 0.13 * k, CH_CALL[3]]); await c.wait(0.035); }
+  }
   async function smoke(c) {                // smoke curls up from where the machine stood to the flickering tube
     for (let i = 0; i < 8 && !c.flow.skipping; i++) {
       c.world.puff([6.4 + Math.sin(i * 1.7) * 0.15, 0.3, -27.2], { n: 8, color: 0xa4a6aa, speed: 0.2, life: 3, gravity: -1.7 });
@@ -301,12 +301,13 @@
     steps: [
       ['do', room],
       ['control', 'chase'],
+      ['do', (c) => c.music('reddy', { fade: 1 })],
       ['objective', 'Call 1987.'],
       ['roam', { until: 'dial_go', auto: (c) => c.hotspots.trigger('machine') }],
       ['do', (c) => {   // Chase in the machine's chair, Luka beside him holding up his phone; over Chase's shoulder
         const a = c.world.actor('chase'), l = c.world.actor('luka');
         if (a) { a.place(SEAT); a.play('sit', { h: 0.48 }); }
-        if (l) { l.place(LU_CALL); l.face('chase', 0); l.play('type'); if (l.rig.attach.phone) l.rig.attach.phone.visible = true; }
+        if (l) { l.place(LU_CALL); l.face('chase', 0); l.play('point'); if (l.rig.attach.phone) l.rig.attach.phone.visible = true; }
         c.cam.shot(DIAL_OTS);
       }],
       ['minigame', 'dial', { mode: '1987' }],
@@ -317,25 +318,31 @@
   };
 
   CUTSCENES['1.7_call'] = [
+    { music: null, fade: 0.6 },              // the ring and the call play over the store's ambience only
     phoneOut('luka', false),
     { do: standCall },
     // [INSERT] The years blur past on the wheel: 2026… 2001… 1993… 1987. It clicks to 06 / 10 / 1987.
-    { shot: 'INSERT', at: 'machine', card: ['wheel', { dd: 29, mm: 9, yyyy: 2026, hh: 11, mi: 58, spin: true }] },
+    // (straight down over the machine's phones, clear of both boys either side of it)
+    { shot: 'CAM', pos: [6.4, 1.55, -26.55], look: [6.35, 0.8, -27.35], fov: 36, card: ['wheel', { dd: 29, mm: 9, yyyy: 2026, hh: 11, mi: 58, spin: true }] },
     { do: (c) => cardSteps(c, 'wheel', [2019, 2011, 2001, 1997, 1993, 1990, 1988].map((yyyy) => ({ dd: 29, mm: 9, yyyy, hh: 11, mi: 58, spin: true })), 0.12) },
     { do: (c) => { if (!c.flow.skipping) c.ui.card('wheel', { dd: 6, mm: 10, yyyy: 1987, hh: 11, mi: 58 }); } },
     { sfx: 'clunk' },
     { wait: 1.4 },
     // [WIDE · low, the machine in the foreground] Both boys lean in behind it. Ringing: an old double trill, crackling.
     WIDE_LOW,
-    { sfx: 'trill' }, { wait: 3 }, { sfx: 'trill' }, { wait: 2.3 },
+    { sfx: 'trill' }, { sfx: 'spark', vol: 0.12 }, { wait: 0.6 }, { sfx: 'spark', vol: 0.1 }, { wait: 2.4 },
+    { sfx: 'trill' }, { sfx: 'spark', vol: 0.12 }, { wait: 0.6 }, { sfx: 'spark', vol: 0.1 }, { wait: 1.7 },
     say('operator', 'You have a reverse-charge call from—'),
     // [CLOSE · Chase, leaning into the lens]
     { expr: [['chase', 'determined']] },
-    { shot: 'CAM', pos: [6.1, 1.35, -27.35], look: [5.78, 1.6, -26.72], fov: 40, move: 'push', amount: 0.8, dur: 0.45 },
+    { act: [['chase', 'idle']] },
+    { shot: 'CAM', pos: [6.1, 1.45, -27.35], look: [5.78, 1.62, -26.72], fov: 40 },
+    { do: (c) => { lean(c); } },            // he leans 0.15 m in toward the lens as he says it
     say('chase', 'Chase and Luka! Optus Redcliffe!'),
     // [TWO-SHOT]
     { expr: [['chase', 'neutral']] },
     { act: [['luka', 'idle'], ['chase', 'idle']] },
+    { place: 'chase', at: CH_CALL },
     { face: 'luka', to: 'chase', dur: 0 }, { face: 'chase', to: 'luka', dur: 0 },
     { shot: 'CAM', pos: [8.25, 1.55, -27.55], look: [6.45, 1.42, -26.72], fov: 44 },
     say('luka', 'Why is it reverse charges?'),

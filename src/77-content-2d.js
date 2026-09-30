@@ -8,6 +8,7 @@
   const actor = (c, id) => c.world.actor(id);
   const has = (id) => state.inventory.includes(id);
   const inSquare = () => world.setId === 'square', inButtery = () => world.setId === 'buttery', inTheatre = () => world.setId === 'theatre';
+  const out = (s) => inSquare() && !!s.flags.tea_given;   // the square opens up once Des has his tea
   const SIX = ['Ronan', 'Siobhán', 'Fiachra', 'Mick', 'Nuala', 'Hartigan'];
   function newNames() { let n = 0; for (let i = 0; i < SIX.length; i++) if (state.names.includes(SIX[i])) n++; return n; }
   const swapText = () => (input.scheme === 'pad' ? 'Y — Swap' : input.scheme === 'touch' ? 'SWAP — Swap' : 'TAB — Swap');
@@ -127,6 +128,24 @@
   }
   const noBook = () => { if (BOOK && BOOK.parent) BOOK.parent.remove(BOOK); };
 
+  // Mick's three marked spots: chalk crosses on the cobbles (toast_1..3), each gone once its toast is down
+  let CHALK = null;
+  function chalk(c) {
+    if (!inSquare()) return;
+    if (!CHALK) {
+      const g = new THREE.PlaneGeometry(0.8, 0.1).rotateX(-H), m = mat(0xf2efe6, { emissive: 0x33322e });
+      CHALK = [0, 1, 2].map(() => { const x = new THREE.Group(); for (const r of [0.8, -0.8]) { const p = new THREE.Mesh(g, m); p.rotation.y = r; x.add(p); } return x; });
+    }
+    const f = state.flags, sc = c.world.scene;
+    CHALK.forEach((x, i) => {
+      const p = c.world.mark('toast_' + (i + 1));
+      if (!p) return;
+      if (x.parent !== sc) sc.add(x);
+      x.position.set(p.x ?? p[0], 0.012, p.z ?? p[2]);
+      x.visible = !f.mick_done && !f.day_done && (f.toast_n | 0) <= i;
+    });
+  }
+
   // ---------------------------------------------------------- dressing the sets
   const MACHINE_DESK = [-20.88, 1.25, 5.62];
   const SPOTS = { ronan: [22.6, 0.47, 2.0, -H], siobhan: 'siobhan', fiachra: 'fiachra', mick: 'mick', nuala: [22.45, 0, -5.25, H], hartigan: 'hartigan_search' };
@@ -137,6 +156,7 @@
     for (const [n, v] of [['machine_wrap', false], ['machine_wire', !!f.machine_wired], ['swivel_chair', false], ['yes_sign', false], ['glasses', false],
       ['bike', !f.part_bike], ['bike_chain', !f.part_bike], ['key_brass', !has('key_brass') && !f.nuala_done], ['umbrella_crowd', true]]) { const o = P(n); if (o) o.visible = v; }
     for (let i = 1; i <= 3; i++) { const o = P('toast_' + i); if (o) o.visible = (f.toast_n | 0) >= i && !f.day_done; }
+    chalk(c);
     const cd = P('cupboard_door'); if (cd) cd.rotation.y = 0;
     const bl = P('bell'); if (bl) bl.userData.ring = BELL.left > 0;
     // Des: at the window with the kettle not yet on; in his chair after the tea
@@ -159,7 +179,8 @@
   function theatreDress(c) { if (!inTheatre()) return; const g = c.world.prop('glasses'); if (g) g.visible = !has('glasses') && !state.flags.hartigan_done; }
 
   // ---------------------------------------------------------- Fiachra: the same three notes, over and over (positional, near the gate)
-  const TUNES = [[0, 2, 4], [0, 2, 4, 7], [0, 2, null, 4], [4, 2, 0]];   // D E F#; go up at the end; leave a gap; play it backwards
+  // D E F#; then four notes each (3.1: "This week he plays four."): go up at the end; leave a gap; play it backwards
+  const TUNES = [[0, 2, 4], [0, 2, 4, 7], [0, 2, null, 4, 2], [4, 2, 0, -3]];
   const semi = (n) => Math.pow(2, n / 12);
   const BUSK = { t: 1, i: 0, mute: false, on: false, o: { rate: 1, vol: 0.6, at: [-27.3, 1.5, -1.55] } };
   function busk(dt) {
@@ -302,12 +323,13 @@
   const MICK_TALK = [   // before: the war, without a word
     { face: 'mick', to: 'luka' }, { act: [['mick', 'shrug']] }, { wait: 1.2 },
     { face: 'mick', to: [12, 4.5] }, { act: [['mick', 'wave']] }, { sfx: 'pigeons', vol: 0.5 }, { wait: 1.0 },
+    { shot: 'CAM', pos: [11.5, 3.2, 5.5], look: [16.5, 0.2, -8.5], fov: 45 }, { wait: 1.6 },   // the three marked spots, off to the far corner
   ];
   const lay = (n) => [
     { do: (c) => { const a = actor(c, state.active); if (a) a.face('toast_' + n); } }, { wait: 0.3 },
     { do: (c) => { const a = actor(c, state.active); if (a) a.play('duck'); } }, { wait: 0.6 },
     { prop: 'toast_' + n, visible: true }, { sfx: 'pop', vol: 0.3 },
-    { flag: 'toast_n', value: n },
+    { flag: 'toast_n', value: n }, { do: chalk },
     { wait: 0.4 },
     { do: (c) => { const a = actor(c, state.active); if (a) a.play('idle'); } },
   ];
@@ -387,7 +409,8 @@
           if (i !== 0) return;
           carry(c, true); state.flags.tea_made = true;
         } },
-      { id: 'kettle', at: 'kettle', r: 0.9, verb: 'Use', kettle: true, sample: 'kettle', when: (s) => inSquare() && !!s.flags.tea_made },
+      { id: 'kettle', at: 'kettle', r: 0.9, verb: 'Use', kettle: true, only: 'luka', when: (s) => inSquare() && !!s.flags.tea_made },
+      { id: 'kettle_c', at: 'kettle', r: 0.9, verb: 'Use', kettle: true, only: 'chase', sample: 'kettle', when: (s) => inSquare() && !!s.flags.tea_made },   // (Chase records)
       { id: 'des_tea', at: 'des', r: 1.3, verb: 'Give tea', once: true, flag: 'tea_given', when: (s) => inSquare() && !!s.flags.tea_made && !s.flags.tea_given, do: () => {} },
       { id: 'des_day', at: 'des', r: 1.3, verb: 'Call it a day', when: (s) => inSquare() && !!s.flags.tea_given && !s.flags.day_done, do: async (c) => { desSeat(c); await dayEnd(c); } },
       { id: 'key_board', at: [-22.52, 0.46, 2.75], r: 0.65, verb: 'Take key', when: (s) => inSquare() && !!s.flags.met_nuala && !s.flags.nuala_done && !has('key_brass'),
@@ -401,31 +424,32 @@
         ] },
       { id: 'key_board_look', at: [-22.52, 0.46, 2.75], r: 0.65, when: (s) => inSquare() && !(s.flags.met_nuala && !s.flags.nuala_done && !has('key_brass')),
         text: 'Every key in the college. Des knows which is which. Des knows everything.' },
-      { id: 'lodge_exit', at: [-21.3, 0.46, 2.7], r: 0.5, verb: 'Open', when: inSquare, door: { to: [-20.8, 0, 0.1, H], kind: 'wood' } },
+      { id: 'lodge_exit', at: [-21.3, 0.46, 2.7], r: 0.5, verb: 'Open', when: out, door: { to: [-20.8, 0, 0.1, H], kind: 'wood' } },
+      { id: 'lodge_exit_tea', at: [-21.3, 0.46, 2.7], r: 0.5, verb: 'Open', when: (s) => inSquare() && !s.flags.tea_given, text: 'Tea first.' },
       { id: 'lodge_in', at: 'lodge_out', r: 0.7, verb: 'Open', when: inSquare, door: { to: [-21.3, 0.46, 3.4, 0], kind: 'wood' }, do: desSeat },
       // --- Front Square: the six
-      { id: 'ronan', at: 'ronan', r: 1.4, verb: 'Wake him', once: true, flag: 'ronan_done', when: (s) => inSquare() && !s.flags.took_textbook, steps: RONAN },
-      { id: 'ronan_book', at: 'ronan', r: 1.4, verb: 'Give his book back', once: true, flag: 'ronan_done', when: (s) => inSquare() && !!s.flags.took_textbook, steps: RONAN },
-      { id: 'siobhan', at: 'siobhan', r: 1.4, verb: 'Talk', once: true, flag: 'siobhan_done', when: inSquare, steps: SIOBHAN },
-      { id: 'fiachra', at: 'fiachra', r: 1.5, verb: 'Talk', only: 'chase', once: true, flag: 'fiachra_done', when: inSquare, steps: FIACHRA },
-      { id: 'fiachra_luka', at: 'fiachra', r: 1.5, verb: 'Talk', only: 'luka', when: (s) => inSquare() && !s.flags.fiachra_done,
+      { id: 'ronan', at: 'ronan', r: 1.4, verb: 'Wake him', once: true, flag: 'ronan_done', when: (s) => out(s) && !s.flags.took_textbook, steps: RONAN },
+      { id: 'ronan_book', at: 'ronan', r: 1.4, verb: 'Give his book back', once: true, flag: 'ronan_done', when: (s) => out(s) && !!s.flags.took_textbook, steps: RONAN },
+      { id: 'siobhan', at: 'siobhan', r: 1.4, verb: 'Talk', once: true, flag: 'siobhan_done', when: out, steps: SIOBHAN },
+      { id: 'fiachra', at: 'fiachra', r: 1.5, verb: 'Talk', only: 'chase', once: true, flag: 'fiachra_done', when: out, steps: FIACHRA },
+      { id: 'fiachra_luka', at: 'fiachra', r: 1.5, verb: 'Talk', only: 'luka', when: (s) => out(s) && !s.flags.fiachra_done,
         steps: [{ face: 'fiachra', to: 'luka' }, { wait: 0.8 }, { do: glance }, { wait: 0.9 }, { do: (c) => c.ui.toast(swapText()) }] },
       { id: 'fiachra_rec', at: 'fiachra', r: 1.8, only: 'chase', sample: 'whistle', when: (s) => inSquare() && !!s.flags.fiachra_done },
-      { id: 'mick', at: 'mick', r: 1.5, verb: 'Talk', flag: 'met_mick', when: (s) => inSquare() && !s.flags.mick_done && !(s.flags.toast_n > 0), steps: MICK_TALK },
+      { id: 'mick', at: 'mick', r: 1.5, verb: 'Talk', flag: 'met_mick', when: (s) => out(s) && !s.flags.mick_done && !(s.flags.toast_n > 0), steps: MICK_TALK },
       { id: 'toast_1', at: 'toast_1', r: 1.1, verb: 'Lay toast', when: (s) => inSquare() && has('toast') && !(s.flags.toast_n > 0), steps: lay(1) },
       { id: 'toast_2', at: 'toast_2', r: 1.1, verb: 'Lay toast', when: (s) => inSquare() && has('toast') && s.flags.toast_n === 1, steps: lay(2) },
       { id: 'toast_3', at: 'toast_3', r: 1.1, verb: 'Lay toast', when: (s) => inSquare() && has('toast') && s.flags.toast_n === 2, steps: [...lay(3), ...MICK] },
-      { id: 'nuala', at: 'nuala', r: 1.4, verb: 'Talk', flag: 'met_nuala', when: (s) => inSquare() && !has('key_brass') && !s.flags.nuala_done, steps: NUALA_TALK },
+      { id: 'nuala', at: 'nuala', r: 1.4, verb: 'Talk', flag: 'met_nuala', when: (s) => out(s) && !has('key_brass') && !s.flags.nuala_done, steps: NUALA_TALK },
       { id: 'nuala_key', at: 'nuala', r: 1.4, verb: 'Give key', when: () => inSquare() && has('key_brass'), steps: NUALA },
-      { id: 'hartigan', at: 'hartigan', r: 1.4, verb: 'Talk', flag: 'met_hartigan', when: (s) => inSquare() && !has('glasses') && !s.flags.hartigan_done, steps: HARTIGAN_TALK },
+      { id: 'hartigan', at: 'hartigan', r: 1.4, verb: 'Talk', flag: 'met_hartigan', when: (s) => out(s) && !has('glasses') && !s.flags.hartigan_done, steps: HARTIGAN_TALK },
       { id: 'hartigan_glasses', at: 'hartigan', r: 1.4, verb: 'Give glasses', when: () => inSquare() && has('glasses'), steps: HARTIGAN },
       { id: 'bell_rec', at: [0, 0, 0], r: 14, only: 'chase', sample: 'bell', when: () => inSquare() && BELL.left > 0 },
-      { id: 'gutter', at: 'gutter', r: 1.4, only: 'chase', sample: 'rain', when: inSquare },
+      { id: 'gutter', at: 'gutter', r: 1.4, only: 'chase', sample: 'rain', when: out },
       // --- doors: the Buttery (toast), the Arts Building (the lecture theatre)
-      { id: 'buttery_in', at: 'buttery_door', r: 1.1, verb: 'Go in', when: inSquare, door: { to: { set: 'buttery', mark: 'door_in' }, kind: 'wood' }, do: butteryDress },
+      { id: 'buttery_in', at: 'buttery_door', r: 1.1, verb: 'Go in', when: out, door: { to: { set: 'buttery', mark: 'door_in' }, kind: 'wood' }, do: butteryDress },
       { id: 'buttery_out', at: [-7.65, 1.3, 0], r: 0.9, verb: 'Go out', when: inButtery,
         door: { to: { set: 'square', mark: [7.27, 0, 12.9, PI], env: 'rain' }, kind: 'wood' }, do: squareDress },
-      { id: 'arts_in', at: 'arts_door', r: 1.1, verb: 'Go in', when: inSquare, door: { to: { set: 'theatre', mark: [0, 5.7, 14.2, PI], env: 'day' }, kind: 'wood' }, do: theatreDress },
+      { id: 'arts_in', at: 'arts_door', r: 1.1, verb: 'Go in', when: out, door: { to: { set: 'theatre', mark: [0, 5.7, 14.2, PI], env: 'day' }, kind: 'wood' }, do: theatreDress },
       { id: 'theatre_out', at: [0, 5.7, 15.1], r: 0.55, verb: 'Go out', when: inTheatre,
         door: { to: { set: 'square', mark: [0, 0, -12.9, 0], env: 'rain' }, kind: 'wood' }, do: squareDress },
       // --- the Buttery: toast from Bernie
@@ -493,10 +517,44 @@
     { loop: 'dynamo', stop: true },
   ];
 
+  // FLASHBACK stills missing? (2.1/2.3/2.5 keep them in memory only: gone after Continue or a reload, never taken if skipped.)
+  // Re-stage each moment under the black at the top of the day and snap it, so 2.10_des shows three places, not one shot three times.
+  const MEM = ['glance_lodge', 'glance_theatre', 'glance_step'];
+  const snapMem = (n) => ({ do: () => { if (MINIGAMES.final_yes && MINIGAMES.final_yes.snap) MINIGAMES.final_yes.snap(n); } });
+  const unsit = (...ids) => ({ do: (c) => { for (const id of ids) { const a = actor(c, id); if (a) { a.rig.seated = false; a.play('idle'); } } } });
+  const Y6 = 2.66, Z6 = 6.0;   // 2.3's row in the lecture theatre
+  const RESTAGE = [
+    { if: () => !still('glance_lodge'), then: [   // 2.1 · CLOSE · Luka, before "…Can we make it back?"
+      { place: 'luka', at: [-22.05, 0.46, 5.95, 1.35] }, { place: 'chase', at: [-22.05, 0.46, 5.0, 1.8] }, { place: 'des', at: [-21.2, 0.46, 6.55, PI] },
+      { shot: 'CLOSE', on: 'luka' }, { wait: 0.1 }, { do: glance }, { wait: 0.45 }, snapMem('glance_lodge'),
+    ] },
+    { if: () => !still('glance_step'), then: [   // 2.5 · the long lens across Front Square: the two of them tiny on the lodge step
+      { place: 'luka', at: 'lodge_step_luka' }, { place: 'chase', at: 'lodge_step_chase' },
+      { act: [['luka', 'sit', { h: 0.23 }], ['chase', 'sit', { h: 0.23 }]] },
+      { place: 'des', at: [-22.2, 0.46, 5.7, -1.4] }, { act: [['des', 'pour']] },
+      { prop: 'umbrella_crowd', visible: false },
+      { shot: 'CAM', pos: [18, 1.7, 12.5], look: [-21.1, 1.4, 2.6], fov: 12 },
+      { wait: 0.1 }, { act: [['luka', 'lanyard'], ['chase', 'head_hands']] }, { wait: 0.1 },
+      { do: glance }, { wait: 0.45 }, snapMem('glance_step'),
+      unsit('luka', 'chase', 'des'),
+    ] },
+    { if: () => !still('glance_theatre'), then: [   // 2.3 · the knee-height track along the row: Luka glances back for Chase
+      { set: 'theatre', env: 'day', spawn: { luka: [1.1, Y6, Z6 + 0.45, -H], chase: [1.9, Y6, Z6 + 0.45, -H] } },
+      { prop: 'crowd', visible: true },
+      { shot: 'CAM', pos: [-0.5, Y6 + 0.6, Z6 + 0.3], look: [1.4, Y6 + 1.5, Z6 + 0.5], fov: 55 },
+      { wait: 0.1 }, { do: glance }, { wait: 0.45 }, snapMem('glance_theatre'),
+      { prop: 'crowd', visible: false },
+      { set: 'square', env: 'rain', spawn: { luka: 'lodge_luka', chase: 'lodge_chase' } },
+    ] },
+    { place: 'luka', at: 'lodge_luka' }, { place: 'chase', at: 'lodge_chase' },
+    { do: squareDress },
+  ];
+
   // The lodge, in the rain: seen from across the square, then in.
   CUTSCENES['2.10_lodge'] = [
     { set: 'square', env: 'rain', spawn: { luka: 'lodge_luka', chase: 'lodge_chase' } },
     { do: squareDress },
+    { if: () => MEM.some((n) => !still(n)), then: RESTAGE },
     { shot: 'INSERT', at: 'lodge_window_out' },
     { fade: 'in', dur: 0.8 },
     { music: 'dublin', fade: 3 },
@@ -506,7 +564,6 @@
   ];
 
   // Tea for Des.
-  const MEM = ['glance_lodge', 'glance_theatre', 'glance_step'];
   CUTSCENES['2.10_des'] = [
     { place: 'des', at: [-20.95, 0.46, 6.5, H] }, { act: [['des', 'idle']] },
     { place: 'chase', at: [-23.55, 0.46, 4.9, 0.9] },
@@ -526,7 +583,6 @@
     { wait: 0.8 },
     slow('des', 'Des.'),
     { name: 'Des' },
-    { shot: 'CLOSE', on: 'luka' },
     say('luka', 'Luka.'),
     // [TWO-SHOT · the handshake, centre frame]
     { shot: 'TWO', on: ['luka', 'des'] },
@@ -539,11 +595,11 @@
     say('luka', "2IC. Second in charge. How'd you know?"),
     slow('des', "You count heads. Every room you walk into. Checking your young fella's all right."),
     // [FLASHBACK INSERTS · quick] Three moments the camera caught without comment: Luka glancing at Chase in the lodge,
-    // in the lecture theatre, on the lodge step. (Fallback when a still is missing, e.g. after scene select: Luka glancing, here.)
+    // in the lecture theatre, on the lodge step. (Re-staged and snapped in 2.10_lodge when missing; this fallback only if a snap failed.)
     ...MEM.flatMap((n) => [{ if: () => !!still(n),
       then: [{ shot: 'CLOSE', on: 'luka', card: ['memory', { name: n }] }, { wait: 1.0 }],
       else: [{ shot: 'CLOSE', on: 'luka' }, { do: glance }, { wait: 1.1 }] }]),
-    { shot: 'CLOSE', on: 'luka', locked: true },
+    { shot: 'CLOSE', on: 'luka', locked: true, height: 0.3 },   // (from slightly above: he doubts himself)
     { expr: [['luka', 'worried']] },
     slow('luka', "I'm not very good at it."),
     // [CLOSE · Des tapping his porter's cap]
@@ -575,14 +631,14 @@
 
   // End of the day, and the next morning.
   const GREET = { bernie: 'Bernie', declan: 'Declan', fiachra: 'Fiachra', siobhan: 'Siobhán', mick: 'Mick', nuala: 'Nuala', hartigan: 'Hartigan', ronan: 'Ronan' };
-  const STATION_X = [-13.4, -10.4, -7.4, -4.6], PATH_Z = 6.8, RUE_Z = 6.0, SPEED = 1.25, END_X = 5.0;
+  const STATION_X = [-13.4, -10.4, -7.4, -4.6], PATH_Z = 6.8, RUE_Z = 6.0, SPEED = 1.25, END_X = 10.0, AHEAD = 1.1;
   let greeted = [];
   function morning(c) {
     c.world.env('rain', 0);
     BUSK.mute = true; BELL.left = 0; BELL.again = 0;
     const P = (n) => c.world.prop(n), bl = P('bell'); if (bl) bl.userData.ring = false;
     for (let i = 1; i <= 3; i++) { const o = P('toast_' + i); if (o) o.visible = false; }
-    notes(c, false); noBook();
+    notes(c, false); noBook(); chalk(c);
     const cr = P('umbrella_crowd'); if (cr) cr.visible = false;
     for (const id of ['chase', 'ronan', 'siobhan', 'fiachra', 'mick', 'nuala', 'hartigan']) c.world.despawn(id);
     // who Luka greets: Bernie, Declan, the busker, the classmate who wanted Rue's notes (whoever the player met)
@@ -608,14 +664,15 @@
       a.face('luka', 0.4);
     }
   }
-  async function rueJoins(c) {   // from the edge of frame: faster than Luka until he's alongside, then in step
+  // Rue, from the frame-left edge: faster than Luka until he's in step on the far side, a pace ahead across a gap (visual rule 2)
+  async function rueJoins(c) {
     const l = actor(c, 'luka');
     await waitX(-4.2);
-    const x0 = l.pos.x, r = c.world.spawn('rue19', [x0 - 3.3, 0, RUE_Z, H]);
+    const x0 = l.pos.x, r = c.world.spawn('rue19', [x0 - 2.6, 0, RUE_Z, H]);
     r.setExpr('smug');
-    const tJoin = 3.0, xj = x0 + SPEED * tJoin;
-    await r.moveTo([xj, 0, RUE_Z], { speed: (xj - (x0 - 3.3)) / tJoin });
-    r.moveTo([END_X, 0, RUE_Z, H], { speed: SPEED });
+    const tJoin = 3.0, xj = x0 + SPEED * tJoin + AHEAD;
+    await r.moveTo([xj, 0, RUE_Z], { speed: (xj - (x0 - 2.6)) / tJoin });
+    r.moveTo([END_X + AHEAD, 0, RUE_Z, H], { speed: SPEED });
   }
   // (locked, from the east: the Campanile centred with the Front Gate beyond; the pair at the left edge walk out north)
   const WIDE = { shot: 'CAM', pos: [14.5, 1.8, 1.0], look: [0, 4.8, 0], fov: 50 };
@@ -635,34 +692,30 @@
     { do: morning },
     // [TRACK · alongside Luka, just below eye level] Crossing Front Square, he greets people by name, and each one turns into the
     // frame to answer. Rue falls into step from the edge of frame.
-    { shot: 'MID', on: 'luka', move: 'track', track: 'alongside', side: 'right', height: -0.12, dist: 1.7, dur: 60 },
+    // (Luka a little left of centre, room ahead of him for the people he greets and for Rue, who ends up frame right)
+    { shot: 'MID', on: 'luka', move: 'track', track: 'alongside', side: 'right', height: -0.12, dist: 1.7, offset: 0.5, dur: 60 },
     { fade: 'in', dur: 0.8 },
     { music: 'dublin', fade: 2 },
     { do: greetings },
     { do: rueJoins },
-    // (in step: the walk-and-talk, from ahead of them)
-    { shot: 'TWO', on: ['luka', 'rue19'], move: 'track', track: 'ahead', height: -0.1, dur: 60 },
+    // (still walking, still the same track)
     say('rue19', 'Why do you keep asking people their names?'),
     say('luka', 'Habit. Retail. You learn names.'),
     say('rue19', "They're nobody."),
-    { do: (c) => waitUntil(() => { const l = actor(c, 'luka'); return !l || !l.mv.on || c.flow.skipping; }) },
-    { do: (c) => { const r = actor(c, 'rue19'); if (r && r.mv.on) r.place([END_X, 0, RUE_Z, H]); } },
-    { face: 'luka', to: 'rue19', dur: 0.6 }, { face: 'rue19', to: 'luka', dur: 0.6 },
-    { shot: 'TWO', on: ['luka', 'rue19'], locked: true },
-    { wait: 0.6 },
     slow('luka', "Nobody's nobody, mate."),
     // [WIDE · locked, the square, the Campanile centred] Rue scoffs and walks out of shot. The camera stays on the empty square.
     { do: (c) => { for (const id of greeted) c.world.despawn(id); } },
+    { place: 'luka', at: [5.0, 0, PATH_Z, H] }, { place: 'rue19', at: [5.0 + AHEAD, 0, RUE_Z - 0.8, H] },   // (a gap between them in this frame too)
     WIDE,
     { act: [['rue19', 'shrug']] }, { expr: [['rue19', 'smug']] },
     { wait: 1.0 },
-    { move: 'rue19', to: [4.6, 0, 13.2], nowait: true },
+    { move: 'rue19', to: [7.4, 0, 13.4], nowait: true },
     { wait: 0.8 },
-    { move: 'luka', to: [7.27, 0, 13.6], nowait: true },
+    { move: 'luka', to: [4.8, 0, 13.6], nowait: true },
     { wait: 2.6 },
     { despawn: 'rue19' }, { despawn: 'luka' },
     say('rue19', '…Morning, Des.', { tag: 'off' }),
-    say('des', '…Morning, Mr Rue.', { tag: 'off' }),
+    say('des', '…Morning, Mr Rue.', { tag: 'off, astonished', speed: 'slow' }),
     // Hold on the empty square for two seconds.
     { wait: 2 },
     { fade: 'out', dur: 0.8 },

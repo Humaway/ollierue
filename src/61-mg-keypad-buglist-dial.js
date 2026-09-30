@@ -494,8 +494,8 @@
         callB.classList.remove('on'); setB.classList.remove('on'); wheelEl.className = 'mg-wheel mg-off';
         hintEl.textContent = ''; capEl.textContent = 'Destination';
         root.classList.toggle('num', mode !== 'final');
-        if (mode === '1987') setCard('', "Luka's phone", 'Trinity College Dublin — switchboard', NUM[1987]);
-        else if (mode === 'home') setCard('say', 'Luka', 'The store. From memory.', NUM.home);
+        if (mode === '1987') setCard('', "Luka's phone", 'Trinity College Dublin — switchboard:', NUM[1987]);
+        else if (mode === 'home') setCard('say', 'Luka', '', NUM.home);   // 2.7: Luka recites the store's number from memory
         else setCard('hide', '', '', '');
         if (mode === 'final') { phase = 'auto'; hum = a.AUDIO.loop ? a.AUDIO.loop('hum', { vol: 0.6 }) : null; }
         else { phase = 'num'; focusKey(); addEventListener('keydown', onKey); }
