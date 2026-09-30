@@ -11,7 +11,7 @@
   // The Bug List as written in 1.6, on the back of this week's targets (the skull shows through).
   const LIST = { title: 'JARVIS — bugs', items: [], skull: true };   // the same sheet as 1.6's card
   const fillList = () => {
-    const ids = state.bugs && state.bugs.length ? state.bugs : ['popups', 'restarts', 'margarine', 'optin', 'sure'];
+    const ids = state.bugs || [];
     LIST.items = ids.map((id) => (BUGS.find((b) => b.id === id) || {}).text).filter(Boolean).concat(DOOR_BUG);
   };
   // The bottom edge of an iPhone: speaker grilles either side of a USB-C port.
@@ -63,11 +63,6 @@
     const t = clock.t;
     await waitUntil(() => { if (TEST.auto) return clock.t - t > 0.5; if (!input.pressed('yes')) return false; input.consume('yes'); return true; });
     c.ui.card(null);
-  };
-  if (!ITEMS.bug_list) ITEMS.bug_list = {   // (1.6 may define it first)
-    name: 'Bug List', desc: 'The Bug List.',
-    icon: icon((c) => { c.rotate(-0.08); c.fillStyle = '#fdfdfb'; c.fillRect(-28, -38, 56, 76); c.fillStyle = '#1d2f8f'; for (let y = -26; y < 32; y += 10) c.fillRect(-20, y, 30 + (y * 7) % 12, 3); }),
-    examine: card('list', () => (fillList(), LIST)),
   };
   Object.assign(ITEMS, {
     recorder: {
@@ -279,6 +274,7 @@
     { shot: 'INSERT', at: 'exterior' },
     { do: (c) => { glanceAt(c, 'luka', 'chase', 4.4); glanceAt(c, 'chase', 'luka', 4.4); } },   // (off screen: still staring when we cut back)
     { wait: 0.4 },
+    { sfx: 'bus' },
     { prop: 'bus', fn: (o) => o.userData.go() },   // it wipes across the lens a third of a second later
     { wait: 0.9 },
     // [TWO-SHOT · the same frame as before] One second. They haven't moved. Rue now has a fresh cup of tea.

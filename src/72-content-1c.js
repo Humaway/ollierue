@@ -161,7 +161,7 @@
   SCENES['1.4'] = {
     title: 'Tethers', set: 'reddy', env: 'day', time: 'Tue 29 Sep 2026, 11:02',
     playable: ['chase', 'luka'], swap: false, hud: null, music: null,   // no music: the store hum, then four alarms
-    spawn: { chase: [-2.0, 0, -4.6, 2.37], luka: [-0.55, 0, -6.1, -0.77] },   // still slumped on the floor from 1.3, facing each other
+    spawn: { chase: [7.05, 0, -9.85, PI + 0.1], luka: [5.75, 0, -9.85, PI - 0.1] },   // still slumped on the floor from 1.3, either side of the monitor
     hotspots: [
       { id: 'keypad', at: 'keypad', r: 1.0, verb: 'Use', only: 'luka', when: (s) => !s.flags.alarm_off, do: keypad },
     ],
@@ -201,7 +201,7 @@
     { shot: 'CLOSE', on: 'chase', locked: true },
     { fade: 'in', dur: 0.6 },
     { wait: 0.6 },
-    { act: [['chase', 'glance', { dur: 3.2, yaw: 0.77 }]] },
+    { act: [['chase', 'glance', { dur: 3.2, yaw: 1.0 }]] },       // (toward the display wall, across the floor)
     { wait: 1.6 },
     // [POV · slow push-in] The display wall. Four phones in a row, like a police line-up. 3%, 3%, 3%, 3%.
     WALL_PUSH,
@@ -211,7 +211,7 @@
     { do: () => MINIGAMES.final_yes?.snap?.('wall') },
     // [WIDE · locked, symmetrical down the aisle] Chase stands and walks toward the wall, back to camera. It sits dead
     // centre at the end of the aisle like an altar.
-    { face: 'chase', to: PI, dur: 0 },
+    { place: 'chase', at: [-2.0, 0, -4.6, PI] },           // (under the POV: still seated, now at the head of the aisle)
     { place: 'luka', at: [-3.6, 0, -2.5, 2.99] },           // up too, out of this frame and the tether angle's: his lines are (off)
     { act: [['luka', 'idle']] },
     { expr: [['chase', 'determined']] },

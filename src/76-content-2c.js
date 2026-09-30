@@ -27,7 +27,7 @@
     if (c.world.setId !== 'square') return;
     const P = (n) => c.world.prop(n);
     const m = P('machine'); if (m) { m.visible = true; m.position.set(...MACHINE_DESK); m.rotation.set(0, -0.3, 0); }
-    for (const [n, v] of [['machine_wrap', false], ['machine_wire', !!state.flags.machine_wired], ['swivel_chair', false], ['yes_sign', false], ['umbrella_crowd', true]]) { const o = P(n); if (o) o.visible = v; }
+    for (const [n, v] of [['machine_wrap', false], ['machine_wire', !!state.flags.machine_wired], ['swivel_chair', false], ['yes_sign', false], ['umbrella_crowd', true], ['machine_prepaid', !state.flags.prepaid_dead]]) { const o = P(n); if (o) o.visible = v; }
     const cd = P('cupboard_door'); if (cd) cd.rotation.y = 0;
     for (const n of ['bike', 'bike_chain']) { const o = P(n); if (o) o.visible = !state.flags.part_bike; }
   }
@@ -92,16 +92,10 @@
   // [SPLIT SCREEN] left: the boys crowded round the machine, facing right across the divide (mirrored by 'luke_call' on the right)
   const LEFT = { shot: 'CAM', pos: [-21.8, 1.76, 7.0], look: [-21.35, 1.5, 5.05], fov: 56 };
   const RIGHT = { shot: 'INSERT', at: 'luke_call' };
-  // [ORBIT · around Chase, the move from 1.5] each sweep shorter and faster
-  const ORBITS = [
-    { shot: 'ORBIT', size: 'MID', on: 'chase', dist: 1.85, height: 0.05, from: -12, to: 12, dur: 5, ease: 'in' },
-    { wait: 4.6 },
-    { shot: 'ORBIT', size: 'MID', on: 'chase', dist: 1.8, height: 0.05, from: 12, to: -12, dur: 3, ease: 'in' },
-    { wait: 2.8 },
-    { shot: 'ORBIT', size: 'MID', on: 'chase', dist: 1.75, height: 0.05, from: -12, to: 12, dur: 1.8, ease: 'in' },
-    { wait: 1.7 },
-    { shot: 'ORBIT', size: 'MID', on: 'chase', dist: 1.7, height: 0.05, from: 12, to: -12, dur: 1.2, ease: 'in' },
-  ];
+  // [ORBIT · around Chase, the move from 1.5] one way round, speeding up as he does (1.5's pitchOrbit, at the lodge's distance)
+  const IDEA = 'Okay. Okay okay okay. The call needs someone in 2026 who says yes. Not someone who thinks it\'s a scam. Someone who knows. Someone who\'s waiting for it.';
+  const ORBIT = () => ({ shot: 'ORBIT', size: 'MID', on: 'chase', dist: 1.8, height: 0.05, from: 16, to: -16, ease: 'in',
+    dur: IDEA.length / CONFIG.text[options.textSpeed] + 1 });
 
   SCENES['2.7'] = {
     title: 'Scam Call', set: 'square', env: 'rain', time: 'Wed 14 Oct 1987',
@@ -192,6 +186,7 @@
     { hud: { battery: 1 }, anim: 1.2 },
     { flag: 'prepaid_dead' },                                      // the machine runs on three phones now; the prepaid goes in Chase's bag
     { wait: 1.8 },
+    { prop: 'machine_prepaid', visible: false },                   // (under the cut)
     // [TWO-SHOT]
     { shot: 'CAM', pos: [-20.9, 1.95, 4.02], look: [-21.9, 1.86, 5.0], fov: 54 },
     { expr: [['luka', 'neutral'], ['chase', 'neutral']] },
@@ -224,8 +219,7 @@
     { do: (c) => { actor(c, 'luka').mood = null; } },
     { place: 'luka', at: [-21.8, 0.46, 5.75, -1.9] }, { act: [['luka', 'idle']] },
     { expr: [['chase', 'determined'], ['luka', 'neutral']] },
-    { par: [say('chase', 'Okay. Okay okay okay. The call needs someone in 2026 who says yes. Not someone who thinks it\'s a scam. Someone who knows. Someone who\'s waiting for it.'),
-      { do: (c) => c.runSteps(ORBITS) }] },
+    { par: [say('chase', IDEA), { do: (c) => c.runSteps([ORBIT()]) }] },
     say('luka', 'Someone alive in 2026, who knows us, who keeps a number working for thirty-nine years and actually picks up.'),
     // [WIDE · Des in the foreground, not looking up from his paper]
     // (Des a step nearer the lens, 3/4 to it and turned from the boys; they look at him past his shoulder)

@@ -9,7 +9,7 @@ const { AUDIO, sfx, music } = (() => {
   const SR = 44100, MR = 32000;                 // one-shots + voices, music + loops
   const rnd = Math.random, mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
   const B = {}, L = {}, M = {}, V = {}, S = { pad: [], bass: [], bleep: [] };  // one-shots, loops, music, voices, song stems
-  let WHITE, BROWN, DROPS, DRIPS, CRACKLE, PULSE, DIST;
+  let WHITE, BROWN, DROPS, DRIPS, CRACKLE, PULSE, WARM, DIST;
   let ctx = null, busM, busS, busV, sendRoom, sendWet, ducked = false, silenced = false;
 
   // ---------------------------------------------------------- synth toolkit (works on any BaseAudioContext)
@@ -274,8 +274,8 @@ const { AUDIO, sfx, music } = (() => {
     kettle_click: [0.1, (c, d, t) => kclick(c, d, t, 0.7)],
     beep: [0.13, (c, d, t) => tone(c, d, t, 1000, 0.1, { type: 'square', v: 0.11, a: 0.002, r: 0.01 })],
     till: [0.7, (c, d, t) => {
-      fm(c, d, t, 2093, 0.5, { ratio: 1.41, index: 3, md: 0.08, v: 0.22, a: 0.001, d: 0.16, r: 0.1 });
-      fm(c, d, t, 3136, 0.3, { ratio: 2.76, index: 1.5, md: 0.05, v: 0.1, a: 0.001, d: 0.08, r: 0.05 });
+      fm(c, d, t, 2349, 0.5, { ratio: 1.41, index: 3, md: 0.08, v: 0.22, a: 0.001, d: 0.16, r: 0.1 });
+      fm(c, d, t, 3520, 0.3, { ratio: 2.76, index: 1.5, md: 0.05, v: 0.1, a: 0.001, d: 0.08, r: 0.05 });
       noise(c, d, t, 0.05, { v: 0.25, a: 0.001, d: 0.02, hp: 2500 });
       tone(c, d, t, 220, 0.06, { to: 170, v: 0.2, a: 0.001, d: 0.03 });
     }],
@@ -554,7 +554,7 @@ const { AUDIO, sfx, music } = (() => {
     ...SONG_PADS.map((ch, i) => ['pad', i, BAR + 1, (c, d, t) => chord(c, d, t, ch, BAR, { v: 0.03, a: 0.25, r: 0.7, lp: 1800, det: [-9, 0, 9] })]),
     ...SONG_BASS.map((m, i) => ['bass', i, 1, (c, d, t) => bassN(c, d, t, m, 0.7, 0.35, 900)]),
     ['bleep', 0, 0.15, (c, d, t) => tone(c, d, t, 98, 0.1, { type: 'square', to: 65, v: 0.25, a: 0.002, d: 0.06, lp: 1500 })],
-    ['bleep', 1, 0.12, (c, d, t) => { tone(c, d, t, 262, 0.08, { type: 'square', v: 0.16, a: 0.002, d: 0.04 }); noise(c, d, t, 0.05, { v: 0.1, a: 0.001, d: 0.02, bp: 3000 }); }],
+    ['bleep', 1, 0.12, (c, d, t) => { tone(c, d, t, 294, 0.08, { type: 'square', v: 0.16, a: 0.002, d: 0.04 }); noise(c, d, t, 0.05, { v: 0.1, a: 0.001, d: 0.02, bp: 3000 }); }],
     ['bleep', 2, 0.05, (c, d, t) => tone(c, d, t, 2093, 0.025, { type: 'square', v: 0.07, a: 0.001, d: 0.01 })],
     ['bleep', 3, 0.22, (c, d, t) => tone(c, d, t, mtof(74), 0.16, { type: 'square', v: 0.12, a: 0.004, d: 0.12, s: 0.4, r: 0.04, lp: 3500 })],
   ];
@@ -579,7 +579,7 @@ const { AUDIO, sfx, music } = (() => {
     LANES.forEach(([k, name, v1, v2], l) => { const ok = has(k) && B[name]; p.lane.push(ok ? B[name] : S.bleep[l]); p.lg.push(gainTo(out, ok ? v1 : v2)); });
     p.bassG = gainTo(out, 0.35); p.padG = gainTo(out, 0.7); p.fxG = gainTo(out, 0.45);
     p.first = mode === 'credits' || p.trill ? 1 : 0; // intro bar
-    if (has('rain') && L.rain) {
+    if ((has('rain') || mode === 'credits') && L.rain) { // the credits breakdown is rain + lead, collected or not
       p.rain = ctx.createBufferSource(); p.rain.buffer = L.rain; p.rain.loop = true;
       p.rain.connect(gainTo(out, 0.5)); p.rain.start(p.t);
     }
@@ -590,8 +590,9 @@ const { AUDIO, sfx, music } = (() => {
   }
   function coda(p, t) { // the ending: the D chord, the bass, and the bell if Chase recorded it
     play(S.pad[0], t, p.padG, 1); play(S.bass[0], t, p.bassG, 1);
-    if (p.bell) play(B.bell, t, p.fxG, 1);
-    p.done = true; p.endAt = t + (p.bell ? 7 : 4);
+    const bell = p.bell || p.mode === 'credits'; // the credits always end on the bell
+    if (bell) play(B.bell, t, p.fxG, 1);
+    p.done = true; p.endAt = t + (bell ? 7 : 4);
   }
   function step(p, t) {
     const bar = p.i >> 4, s = p.i & 15, k = bar - p.first, pat = p.pat, band = p.mode !== 'seq';
@@ -709,6 +710,7 @@ const { AUDIO, sfx, music } = (() => {
     CRACKLE = clicks(2.9, 25, 2500, 9000, 0.0003, 0.8);
     PULSE = [new Float32Array(40), new Float32Array(40)];
     for (let n = 1; n < 40; n++) PULSE[0][n] = 2 * Math.sin(n * Math.PI * 0.125) / (n * Math.PI);
+    WARM = [new Float32Array(8), Float32Array.of(0, 1, 0.5, 0.3, 0.18, 0.1, 0.06, 0.03)]; // a sine with a little body: low voices carry on small speakers
     DIST = new Float32Array(256);
     for (let i = 0; i < 256; i++) DIST[i] = Math.tanh(3 * (i / 127.5 - 1)) / Math.tanh(3);
     // many small contexts in parallel, a yield between groups so the loader keeps animating
@@ -735,15 +737,15 @@ const { AUDIO, sfx, music } = (() => {
           pk.type = 'peaking'; pk.frequency.value = [700, 1100, 1600, 2300, 1100][k]; pk.gain.value = v.mono ? 0 : 7; pk.Q.value = 1.8;
           pk.connect(d);
           tone(c, pk, 0, f, len, {
-            type: v.wave === 'pulse' ? 'square' : v.wave, wave: v.wave === 'pulse' ? c.createPeriodicWave(PULSE[0], PULSE[1]) : null,
+            type: v.wave === 'pulse' ? 'square' : v.wave, wave: v.wave === 'pulse' ? c.createPeriodicWave(PULSE[0], PULSE[1]) : v.wave === 'sine' ? c.createPeriodicWave(WARM[0], WARM[1]) : null,
             v: WAVE_V[v.wave] || 0.3, a: v.soft ? 0.015 : 0.003, d: len * (v.soft ? 0.8 : 0.6), s: 0.3, r: v.soft ? 0.04 : 0.015,
             lp: v.filter, q: 1, to: rising ? f * 1.35 : v.mono ? 0 : f * (v.tumble ? [0.92, 1.06, 0.95, 1.08][k] : 0.96), gl: len,
           });
         });
       }));
       let s = 0, n = 0;
-      for (const x of a) for (let i = 0; i < x.length; i++) { s += x[i] * x[i]; n++; }
-      const g = 0.09 / Math.max(1e-9, Math.sqrt(s / n)); // every voice equally loud
+      for (const x of a) { let y = 0, p = 0; for (let i = 0; i < x.length; i++) { y = 0.959 * (y + x[i] - p); p = x[i]; s += y * y; n++; } } // loudness through a 300 Hz high-pass (low hums read quieter)
+      const g = (v.soft ? 0.06 : 0.07) / Math.max(1e-9, Math.sqrt(s / n)); // every voice equally loud; Rue at 58, Des and co. a touch softer
       for (const x of a) for (let i = 0; i < x.length; i++) x[i] *= g;
       V[id] = { n: a.slice(0, 4).map((x) => buf(x, SR)), q: buf(a[4], SR), min: v.len + 0.02 + (v.gap || 0), mono: !!v.mono, also: v.also, last: 0 };
     }));
@@ -812,7 +814,7 @@ const { AUDIO, sfx, music } = (() => {
     const det = name === 'alarm' ? 1 + 0.013 * alarms++ : 1; // each layered alarm slightly detuned
     s.buffer = b; s.loop = true; s.playbackRate.value = (o.rate || 1) * det;
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(o.vol ?? 1, t + (o.fade ?? 0.15));
-    s.connect(name === 'buttery_radio' ? band(ctx, g, 250, 3200) : g); // the cue, heard from the café radio
+    s.connect(name === 'buttery_radio' ? band(ctx, g, 250, 3200) : o.lp ? band(ctx, g, 20, o.lp) : g); // the cue, heard from the café radio; o.lp: muffled
     const p = place(g, o, name === 'walkman');
     p.connect(busS);
     s.start(t, rnd() * b.duration);
@@ -832,12 +834,14 @@ const { AUDIO, sfx, music } = (() => {
   }
 
   const amb = {}; // ambience loops by name
+  let lastAmb = null, room = 'none';
   function ambience(a) {
     if (!ctx) return;
-    const want = a && a.loops ? a.loops.slice() : [];
-    if (a && a.rain) want.push(a.rain === 'heavy' ? 'rain_heavy' : 'rain');
+    lastAmb = a;
+    const want = a && a.loops ? a.loops.slice() : [], inside = room === 'room';
+    if (a && a.rain) want.push(a.rain === 'heavy' || !inside ? 'rain_heavy' : 'rain'); // heavier outdoors, muffled through the glass indoors
     for (const k in amb) if (!want.includes(k)) { amb[k].stop(1); delete amb[k]; }
-    for (const k of want) if (!amb[k]) amb[k] = loop(k, { fade: 1 });
+    for (const k of want) if (!amb[k]) amb[k] = loop(k, { fade: 1, vol: k === 'rain_heavy' ? 0.7 : k === 'rain' && inside ? 0.6 : 1, lp: k === 'rain' && inside ? 1800 : 0 });
   }
 
   function blip(id, rising) {
@@ -848,7 +852,7 @@ const { AUDIO, sfx, music } = (() => {
     if (t - v.last < (rising ? v.min * 0.6 : v.min)) return; // syllable rate, however fast the text types
     v.last = t;
     const s = ctx.createBufferSource();
-    s.buffer = rising ? v.q : v.n[rnd() * 4 | 0];
+    s.buffer = rising && !v.mono ? v.q : v.n[rnd() * 4 | 0]; // the operator never inflects
     if (!v.mono) s.playbackRate.value = 1 + (rnd() * 2 - 1) * 0.08;
     s.connect(busV); s.start(t);
     if (v.also) blip(v.also, rising);
@@ -889,7 +893,7 @@ const { AUDIO, sfx, music } = (() => {
     cur = { name: cue, g, src: [], p: null };
     if (M[cue]) {
       const s = ctx.createBufferSource(); s.buffer = M[cue]; s.loop = true; s.connect(g); s.start(t + 0.01); cur.src.push(s);
-      if (BED[cue] && L.rain) { const r = ctx.createBufferSource(); r.buffer = L.rain; r.loop = true; r.connect(gainTo(g, BED[cue])); r.start(t + 0.01); cur.src.push(r); }
+      if (BED[cue] && L.rain && st.scene !== '3.4') { const r = ctx.createBufferSource(); r.buffer = L.rain; r.loop = true; r.connect(gainTo(g, BED[cue])); r.start(t + 0.01); cur.src.push(r); }   // (no rain in 3.4: the first dry day)
     } else if (cue === 'credits') cur.p = player(st.pattern, st.samples, 'credits', { dest: g });
     else if (cue === 'pudding_walkman') { // the finished song, through Rue's Walkman
       const pk = ctx.createBiquadFilter(); pk.type = 'peaking'; pk.frequency.value = 1500; pk.gain.value = 3; pk.connect(g);
@@ -911,6 +915,7 @@ const { AUDIO, sfx, music } = (() => {
     setRoom(r) {
       if (!ctx) return;
       const t = ctx.currentTime;
+      if (r !== room) { room = r; if (lastAmb) ambience(lastAmb); } // the rain bed follows indoors/outdoors
       sendRoom.gain.setTargetAtTime(r === 'room' ? 0.25 : 0, t, 0.2);
       sendWet.gain.setTargetAtTime(r === 'wet' ? 0.35 : 0, t, 0.2);
     },
@@ -931,6 +936,7 @@ const { AUDIO, sfx, music } = (() => {
       seqP = null;
       for (const h of [...live]) h.stop(0.05);
       for (const k in amb) delete amb[k];
+      lastAmb = null;
     },
     buffers: { B, L, M, V, S }, // for tests / the F2 overlay
   };

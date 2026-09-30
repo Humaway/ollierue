@@ -110,6 +110,19 @@
     r.parts.torso.add(m); m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.scale.set(1, 1, 1); m.visible = visible;
     r.attach.lanyard = m;
   }
+  // Leaving 3.3/3.4 early (quit, scene select): the pooled rigs go back as they were (the lanyard home, Chase's earbud in, Rue upright)
+  const RIGS = {};
+  function watch(c) {
+    for (const id of ['rue19', 'chase']) { const a = actor(c, id); if (a) RIGS[id] = a.rig; }
+    if (RIGS.u) return;
+    addUpdate(RIGS.u = () => {
+      if (flow.sceneId === '3.3' || flow.sceneId === '3.4') return;
+      removeUpdate(RIGS.u); RIGS.u = null;
+      lanyardHome({ world });
+      const g = RIGS.chase && RIGS.chase.attach; if (g) { if (g.headphones) g.headphones.visible = false; if (g.earbud) g.earbud.visible = true; }
+      const r = RIGS.rue19; if (r) { r.root.rotation.z = 0; if (r.attach.brick) r.attach.brick.visible = false; }
+    });
+  }
   // [CLOSE · Luka's hands] off over his head, then held in front of him for a second
   function lanyardOff(c) {
     const m = lanyard(c), l = actor(c, 'luka');
@@ -176,7 +189,7 @@
     P('room_lamp')?.userData.on?.(true);
     const d = P('door'); if (d) { d.userData.open = undefined; d.rotation.y = d.userData.closedY ?? d.rotation.y; }
     const l = actor(c, 'luka'); if (l) l.mood = null;
-    lanyardHome(c);
+    lanyardHome(c); watch(c);
   }
   function labDress(c) {
     const P = (n) => c.world.prop(n);
@@ -209,6 +222,7 @@
       ['control', 'chase'],
       ['objective', 'Finish the song.'],
       ['roam', { until: 'seq_go', auto: (c) => c.hotspots.trigger('computer') }],
+      ['objective', null],         // (the sequencer fills the screen with its own header)
       ['cam', 'fixed', GREEN],   // the minigame's release eases into this same angle: no jump
       ['cutscene', '3.3_green'],
       ['minigame', 'sequencer', {}],
@@ -369,7 +383,7 @@
   function squareDress(c) {
     const P = (n) => c.world.prop(n);
     const m = P('machine'); if (m) { m.visible = true; m.position.set(...MACHINE); m.rotation.set(0, -0.3, 0); }
-    for (const [n, v] of [['machine_wrap', false], ['machine_wire', true], ['swivel_chair', false], ['yes_sign', false], ['lodge_light', true], ['bike', false], ['bike_chain', false]]) { const o = P(n); if (o) o.visible = v; }
+    for (const [n, v] of [['machine_wrap', false], ['machine_wire', true], ['swivel_chair', false], ['yes_sign', false], ['lodge_light', true], ['bike', false], ['bike_chain', false], ['machine_prepaid', false]]) { const o = P(n); if (o) o.visible = v; }
     const cd = P('cupboard_door'); if (cd) cd.rotation.y = 0;
     const b = P('bell'); if (b) b.userData.ring = false;
     lanyardHome(c);
@@ -378,6 +392,7 @@
     for (const [n, id, at] of WAVERS) if (state.names.includes(n)) c.world.spawn(id, at);
     const l = actor(c, 'luka'); if (l) l.mood = null;
     c.world.env(OVERCAST, 0);
+    watch(c);
   }
   // Wavers: when the player comes within 6 m, they turn and wave.
   function waves(c) {
@@ -451,6 +466,7 @@
       ['cam', 'fixed', DIALING],   // (behind the fade) each cutscene below ends on the angle its minigame then sits on
       ['cutscene', '3.4_goodbye'],
       ['minigame', 'dial', { mode: 'final' }],
+      ['objective', null],         // (the final YES montage is full screen: no HUD line over it)
       ['cam', 'fixed', HANDS],
       ['cutscene', '3.4_storage'],
       ['minigame', 'final_yes', {}],

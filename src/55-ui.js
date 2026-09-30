@@ -31,6 +31,7 @@ const ui = (() => {
     fade(to, dur = 0.5, color) {
       if (to === 'out') to = 1; else if (to === 'in') to = 0;
       if (color) fadeEl.style.background = color; else if (to > 0) fadeEl.style.background = '#000';
+      if (options.reduceFlashing && dur > 0 && to > fadeEl._o && /^#f/i.test(color || '')) dur = Math.max(dur, 1.2); // Reduce Flashing: no snap to white
       return fadeTo(fadeEl, to, dur);
     },
     flash(dur = 0.6, color = '#fff') {
@@ -89,11 +90,13 @@ const ui = (() => {
       swapEl.children[1].src = portraitURL(activeId);
       swapEl.children[0].src = otherId ? portraitURL(otherId) : '';
       swapEl.children[0].style.display = otherId ? '' : 'none';
+      swapEl.children[2].textContent = input.scheme === 'pad' ? 'Y' : input.scheme === 'touch' ? 'SWAP' : 'TAB';
       swapEl.classList.remove('off');
     },
 
     // ---------------------------------------------------------- inventory panel (modal while open)
     inventoryPanel(spec) {
+      root.classList.toggle('invopen', !!spec);
       if (!spec) { inv.spec = null; inv.el.classList.add('off'); return null; }
       inv.spec = spec; inv.sel = 0; inv.mode = 'items'; inv.act = 0; inv.first = -1; inv.t = 0;
       const items = spec.items || [];
@@ -174,9 +177,9 @@ const ui = (() => {
     if (inv.act === 0) s.onExamine && s.onExamine(id); else s.onUse && s.onUse(id);
   }
   inv.acts.forEach((b, k) => b.addEventListener('click', () => { if (!inv.spec || !(inv.spec.items || []).length) return; if (inv.mode === 'combine') inv.mode = 'acts'; inv.act = k; invDo(); }));
+  function invClose() { const s = inv.spec; U.inventoryPanel(null); s.onClose && s.onClose(); }
   function invUpdate(dt) {
-    const s = inv.spec, n = (s.items || []).length;
-    const close = () => { U.inventoryPanel(null); s.onClose && s.onClose(); };
+    const s = inv.spec, n = (s.items || []).length, close = invClose;   // (no closure per tick)
     if (TEST.auto && (inv.t += dt) > 0.5) return close();
     const L = input.pressed('left') || input.pressed('up'), R = input.pressed('right') || input.pressed('down');
     input.consume('left'); input.consume('right'); input.consume('up'); input.consume('down');
@@ -401,15 +404,16 @@ const popup = (() => {
     b.addEventListener('pointerenter', (e) => {
       if (!p.open) return;
       focus(p, b._k);
-      if (!p.spec.dodge || !p.spec.dodge.includes(b._k) || b._d >= 2) return;
-      b._d++; // run away 60 px from the pointer (twice), then give up
-      const r = b.getBoundingClientRect();
-      let dx = e.clientX < r.left + r.width / 2 ? 60 : -60;
-      if (Math.abs(b._x + dx) > 130) dx = -dx;
-      b._x += dx; b._y = b._d === 1 ? -14 : 10;
-      b.style.transform = `translate(${b._x}px,${b._y}px)`;
+      if (runs(p, b)) { const r = b.getBoundingClientRect(); dodge(b, e.clientX < r.left + r.width / 2 ? 60 : -60); }
     });
     return b;
+  }
+  const runs = (p, b) => !!p.spec.dodge && p.spec.dodge.includes(b._k) && b._d < 2;
+  function dodge(b, dx) { // run away 60 px from the pointer (or from YES), twice, then give up
+    b._d++;
+    if (Math.abs(b._x + dx) > 130) dx = -dx;
+    b._x += dx; b._y = b._d === 1 ? -14 : 10;
+    b.style.transform = `translate(${b._x}px,${b._y}px)`;
   }
   const focus = (p, k) => { p.focus = k; for (let i = 0; i < p.n; i++) p.bs[i].classList.toggle('foc', i === k); };
   const place = (p, x, y) => { p.w.style.transform = `translate(${x}px,${y}px) translate(-50%,-50%)`; };
@@ -420,7 +424,7 @@ const popup = (() => {
     if (!a) return;
     a.headPos(v3);
     const s = cam.project(v3);
-    if (s && s.visible !== false) place(p, s.x, s.y);
+    if (s && s.visible !== false && (Math.abs(s.x - p.px) > 0.4 || Math.abs(s.y - p.py) > 0.4)) { p.px = s.x; p.py = s.y; place(p, s.x, s.y); }   // restyle only when the head moved
   }
   function close(p, i) {
     if (!p.open) return;
@@ -466,7 +470,7 @@ const popup = (() => {
       let n = 0; for (let i = 0; i < live.length; i++) if (live[i].stack) n++;
       x += (n % 14) * 18; y += (n % 14) * 18; p.stack = true;
     }
-    place(p, x, y);
+    place(p, x, y); p.px = x; p.py = y;
     p.z = (s.z || 0) * 10000 + (++seq);
     p.w.style.zIndex = p.z;
     live.push(p);
@@ -495,7 +499,16 @@ const popup = (() => {
       }
       if (p.n && (!top || p.z > top.z)) top = p;
     }
-    if (top && !say.busy() && input.pressed('yes')) { input.consume('yes'); close(top, top.focus); }
+    if (!top || say.busy()) return;
+    if (input.pressed('yes')) { // keys / pad / touch YES: a runaway button runs from YES too
+      input.consume('yes'); const b = top.bs[top.focus];
+      if (runs(top, b)) dodge(b, -60); else close(top, top.focus);
+    } else if (top.n > 1 && (input.pressed('left') || input.pressed('right'))) {
+      const d = input.pressed('right') ? 1 : -1; input.consume('left'); input.consume('right');
+      focus(top, (top.focus + d + top.n) % top.n);
+    } else if (input.pressed('no') && !(typeof flow !== 'undefined' && flow.cutscene)) { // NO answers a [NO] / [Cancel] button (in cutscenes NO fast-forwards)
+      for (let k = 0; k < top.n; k++) { const t = top.bs[k].textContent; if (t === 'NO' || t === 'Cancel') { input.consume('no'); close(top, k); break; } }
+    }
   };
   popup.render = () => { for (let i = 0; i < live.length; i++) if (live[i].actor) track(live[i]); };
   return popup;
@@ -622,7 +635,7 @@ const portraitURL = (() => {
 
 // ------------------------------------------------------------ menus: title, main, options, controls, scene select, extras, pause
 const menus = (() => {
-  const titleEl = document.getElementById('title'), root = document.getElementById('menu');
+  const titleEl = document.getElementById('title'), root = document.getElementById('menu'), uiEl = document.getElementById('ui'); // uiEl.menuon hides the touch controls
   const head = root.querySelector('.head'), body = root.querySelector('.body'), list = root.querySelector('.list'), foot = root.querySelector('.foot');
   const btns = [];
   let items = [], sel = 0, back = null, onTitle = false, typed = '', song = null, orbitT = 0;
@@ -665,7 +678,7 @@ const menus = (() => {
     if (o.body) body.append(o.body); else if (o.html) body.innerHTML = o.html;
     foot.textContent = o.foot ?? (bk ? 'YES — Select · NO — Back' : 'YES — Select');
     const low = o.low && !M.paused;
-    root.className = low ? 'low' : 'dim';
+    root.className = low ? 'low' : 'dim'; uiEl.classList.add('menuon');
     titleEl.classList.toggle('off', !(onTitle && low));
     list.textContent = '';
     for (let k = 0; k < its.length; k++) list.append(btn(k));
@@ -697,7 +710,7 @@ const menus = (() => {
     its.push({ label: 'New Game', act: () => (hasSave() ? confirm('Start a new game? Your saved game will be replaced.', newGame, mainMenu) : newGame()) });
     its.push({ label: 'Options', act: () => optionsMenu(mainMenu) });
     if (profile.completed) {
-      its.push({ label: 'Chapter Select', act: () => sceneSelect(mainMenu) });
+      its.push({ label: 'Chapter Select', act: () => sceneSelect(mainMenu, 'CHAPTER SELECT') });
       its.push({ label: 'Extras', act: extras });
     }
     show('', its, null, { low: true });
@@ -718,10 +731,10 @@ const menus = (() => {
     const rows = CONTROLS.map((r) => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join('');
     show('CONTROLS', [{ label: 'Back', act: to }], to, { html: `<table><tr><th>ACTION</th><th>KEYBOARD AND MOUSE</th><th>GAMEPAD</th><th>TOUCH</th></tr>${rows}</table>` });
   }
-  function sceneSelect(to) {
+  function sceneSelect(to, h = 'SCENE SELECT') {
     const its = SCENE_ORDER.map((id) => ({ label: id, sub: (SCENES[id] && SCENES[id].title) || '', act: () => start(id, { select: true }) }));
     its.push({ label: 'Back', act: to });
-    show('SCENE SELECT', its, to);
+    show(h, its, to);
   }
   function saved() { return loadGame() || state; }
   function extras() {
@@ -769,7 +782,7 @@ const menus = (() => {
   // ---------------------------------------------------------- leaving the title
   function leave() {
     if (song) { song.stop(); song = null; }
-    onTitle = false; M.mode = null;
+    onTitle = false; M.mode = null; uiEl.classList.remove('menuon');
     titleEl.classList.add('off'); root.classList.add('off');
     if (typeof music === 'function') music(null, { fade: 0.8 });
   }
@@ -802,11 +815,12 @@ const menus = (() => {
       else RUE_TEST.done = true;
       return;
     }
-    M.mode = 'wait'; onTitle = true; typed = '';
+    M.mode = 'wait'; onTitle = true; typed = ''; uiEl.classList.add('menuon');
     root.classList.add('off');
     await ui.fade(1, 0.4);
     try {
       if (world.setId !== 'office') await world.load('office', { env: 'dark' }); else world.env('dark');
+      if (typeof AUDIO !== 'undefined') { AUDIO.ambience(world.set.ambience); AUDIO.setRoom(world.set.ambience.room); }   // (no Dublin rain left over on the title)
       for (const id of (world.actors instanceof Map ? [...world.actors.keys()] : Object.keys(world.actors || {}))) world.despawn(id);
       if (typeof player !== 'undefined') player.enabled = false;
       orbit(); orbitT = 0;
@@ -817,7 +831,7 @@ const menus = (() => {
     ui.fade(0, 1.2);
   };
   M.pause = () => { M.paused = true; clock.paused = true; pauseMenu(); };
-  M.resume = () => { M.paused = false; clock.paused = false; M.mode = null; root.classList.add('off'); };
+  M.resume = () => { M.paused = false; clock.paused = false; M.mode = null; root.classList.add('off'); uiEl.classList.remove('menuon'); };
   M.update = () => {
     if (onTitle && (orbitT += CONFIG.step) > 240) { orbitT = 0; orbit(); }
     if (M.mode === null) {

@@ -746,9 +746,10 @@ SETS.square = (() => {
     // the phone machine: 4 phones taped round a box, wires, a little screen; wrapped in Des's newspaper
     const mach = part('machine', () => {
       bx(-0.13, 0, -0.1, 0.13, 0.07, 0.1, 0x5a5e62);
-      [[-0.09, 0.3], [0.09, -0.3], [-0.05, -0.15], [0.05, 0.15]].forEach(([x, r], i) => bc(x, 0.13, (i - 1.5) * 0.045, 0.075, 0.16, 0.01, 0x121416, r));
+      [[-0.09, 0.3], [0.09, -0.3], [0.05, 0.15]].forEach(([x, r], i) => bc(x, 0.13, [-0.0675, -0.0225, 0.0675][i], 0.075, 0.16, 0.01, 0x121416, r));
       bx(-0.13, 0.07, 0.06, 0.13, 0.1, 0.075, 0xd8c24a); bx(-0.12, 0.07, -0.08, 0.1, 0.09, -0.068, 0xc23a2a); bx(-0.02, 0.07, -0.1, 0.0, 0.2, 0.1, 0x2a6ac2);
     }, -24.75, 1.24, 2.72);
+    mach.add(part('machine_prepaid', () => bc(-0.05, 0.13, 0.0225, 0.075, 0.16, 0.01, 0x121416, -0.15)));   // the prepaid: dead from 2.7 (content hides it)
     const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.05), mat(0x9adfff, { emissive: 0x3aa0d8 })); screen.name = 'machine_screen'; screen.position.set(0, 0.085, 0.101); mach.add(screen);
     const wrap = part('machine_wrap', () => { for (const [x, z, r] of [[-0.02, 0, 0.2], [0.03, 0.02, -0.5], [0, -0.02, 1.2]]) { const g = new THREE.BoxGeometry(0.34, 0.24, 0.26); g.rotateY(r).rotateX(0.2 * r).translate(x, 0.12, z); put(g, null, M.news); } });
     mach.add(wrap); root.add(mach); L.machine = mach;
@@ -831,6 +832,7 @@ SETS.square = (() => {
     L.foot = instanced(new THREE.PlaneGeometry(0.15, 0.32).rotateX(-H), matTex(T.foot, { transparent: true, color: 0xe4eef6 }), fp); L.foot.name = 'footprints'; L.foot.visible = false; root.add(L.foot);
     L.rip = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-H), new THREE.MeshBasicMaterial({ map: T.ring, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }), RP.n);
     L.rip.name = 'ripples'; L.rip.frustumCulled = false; root.add(L.rip);
+    L.rip.setColorAt(0, tc.setScalar(0));   // instanceColor exists from the build, so the warmed program is the one that plays
     L.drip = new THREE.InstancedMesh(new THREE.BoxGeometry(0.014, 0.07, 0.014), new THREE.MeshBasicMaterial({ color: 0xb8c4d0, transparent: true, opacity: 0.7 }), DR.n);
     L.drip.name = 'drips'; L.drip.frustumCulled = false; root.add(L.drip);
     for (let i = 0; i < DR.n; i++) DR.y[i] = -1 - rnd();
@@ -852,9 +854,9 @@ SETS.square = (() => {
   const DR = { n: 10, x: new Float32Array(10), y: new Float32Array(10), z: new Float32Array(10), v: new Float32Array(10) };
   const CYC = ((p) => { const cum = [0]; for (let k = 1; k < p.length; k++) cum.push(cum[k - 1] + Math.hypot(p[k][0] - p[k - 1][0], p[k][1] - p[k - 1][1])); return { p, cum, len: cum[cum.length - 1] }; })(
     [[-18, 1.2], [-9, 5.2], [0, 7.0], [9, 6.0], [11.5, 0], [9, -6.8], [0, -7.4], [-9, -5.4], [-18, -1.2], [-18, 1.2]]);
-  const WK = PATHS.map((p, i) => { const cum = [0]; for (let k = 1; k < p.length; k++) cum.push(cum[k - 1] + Math.hypot(p[k][0] - p[k - 1][0], p[k][1] - p[k - 1][1])); return { p, cum, len: cum[cum.length - 1], s: ((i * 0.37) % 1) * cum[cum.length - 1], v: 1.1 + (i % 3) * 0.15, ph: i }; });
+  const WK = PATHS.map((p, i) => { const cum = [0]; for (let k = 1; k < p.length; k++) cum.push(cum[k - 1] + Math.hypot(p[k][0] - p[k - 1][0], p[k][1] - p[k - 1][1])); return { p, cum, len: cum[cum.length - 1], s: ((i * 0.37) % 1) * cum[cum.length - 1], v: 1.1 + (i % 3) * 0.15, ph: i, nx: 3 + i * 1.7 }; });
   const S = { ll: 1, cyc: 0, env: '', t: 0, bellA: 0, bellP: 0, radio: null, idle: 0, gut: 0, gate: 1, gateTo: 1, porter: 0, pt: 0, scat: 0 };
-  const D = new THREE.Object3D(); D.rotation.order = 'YXZ';
+  const D = new THREE.Object3D(), PM = new THREE.Matrix4(), RM = new THREE.Matrix4(), TM = new THREE.Matrix4(); D.rotation.order = 'YXZ';
   const RADIO = { at: [-24.2, 1.5, 6.92], vol: 0.3 }, GUT = { at: [-19.85, 0.4, 6.95], vol: 0.35 }, PIGS = { at: [0, 0.5, 0], vol: 0.8 };
   const HOME = [12, 4.5], PORTER_PATH = [[22.2, 5.6], [17, 5.4], [8, 8.2], [-4, 7.4], [-12, 4.4], [-18.3, 1.2], [-21.3, 1.0]];
   const watch = (dt) => { if ((S.idle += dt) > 0.3) { if (S.radio) S.radio.stop(0.5); S.radio = null; removeUpdate(watch); } };
@@ -891,13 +893,19 @@ SETS.square = (() => {
     if (L.crowd.visible) {
       for (let i = 0; i < L.cb.count; i++) {
         const w = WK[i]; walkAt(w, w.s, WP);
+        const stop = (w.nx -= dt) < 0, ease = stop ? Math.min(1, -w.nx * 4, (w.nx + 1.8) * 4) : 0;   // a pause now and then: check the watch / shake the umbrella
+        if (w.nx < -1.8) w.nx = 7 + (i * 2.3) % 6;
         const fx = Math.sin(WP[2]), fz = Math.cos(WP[2]), dx = px - WP[0], dz = pz - WP[1];
-        if (!(dx * fx + dz * fz > 0 && dx * dx + dz * dz < 1.4)) { w.s += w.v * dt; w.ph += w.v * dt * 5.2; if (w.s >= w.len) w.s = 0; }
-        const bob = 0.025 * Math.abs(Math.sin(w.ph));
+        if (!stop && !(dx * fx + dz * fz > 0 && dx * dx + dz * dz < 1.4)) { w.s += w.v * dt; w.ph += w.v * dt * 5.2; if (w.s >= w.len) w.s = 0; }
+        const sw = stop ? 0 : Math.sin(w.ph), bob = 0.025 * Math.abs(sw);
         D.position.set(WP[0], bob, WP[1]); D.rotation.set(0, WP[2], 0); D.scale.setScalar(1); D.updateMatrix();
-        L.cb.setMatrixAt(i, D.matrix); L.ch.setMatrixAt(i, D.matrix);
-        D.rotation.set(0.12, WP[2], 0); D.updateMatrix(); L.cu.setMatrixAt(i, D.matrix);
-        for (let s = 0; s < 2; s++) { const sd = s ? 0.09 : -0.09; D.position.set(WP[0] + fz * sd, 0.8 + bob, WP[1] - fx * sd); D.rotation.set(Math.sin(w.ph) * (s ? 0.45 : -0.45), WP[2], 0); D.updateMatrix(); L.cl.setMatrixAt(i * 2 + s, D.matrix); }
+        L.cb.setMatrixAt(i, D.matrix);
+        if (i & 1) L.ch.setMatrixAt(i, D.matrix);
+        else { PM.makeTranslation(0, 1.6, 0).multiply(RM.makeRotationX(0.45 * ease)).multiply(TM.makeTranslation(0, -1.6, 0)); L.ch.setMatrixAt(i, RM.multiplyMatrices(D.matrix, PM)); }
+        D.rotation.set(0.12, WP[2], 0); D.updateMatrix();
+        if (i & 1) { PM.makeTranslation(0, 1.3, 0).multiply(RM.makeRotationZ(0.3 * ease * Math.sin(t * 26))).multiply(TM.makeTranslation(0, -1.3, 0)); L.cu.setMatrixAt(i, RM.multiplyMatrices(D.matrix, PM)); }
+        else L.cu.setMatrixAt(i, D.matrix);
+        for (let s = 0; s < 2; s++) { const sd = s ? 0.09 : -0.09; D.position.set(WP[0] + fz * sd, 0.8 + bob, WP[1] - fx * sd); D.rotation.set(sw * (s ? 0.45 : -0.45), WP[2], 0); D.updateMatrix(); L.cl.setMatrixAt(i * 2 + s, D.matrix); }
       }
       L.cb.instanceMatrix.needsUpdate = L.ch.instanceMatrix.needsUpdate = L.cl.instanceMatrix.needsUpdate = L.cu.instanceMatrix.needsUpdate = true;
     }
@@ -978,14 +986,14 @@ SETS.square = (() => {
       rain: { bg: 0x9aa3ab, fog: [0xa2aab2, 0.022], hemi: [0xdfe6ee, 0x4a4f55, 1.05], dir: [0xe6ecf2, 0.75, [-6, 12, 4]] },
       dusk: { bg: 0x4b5566, fog: [0x59636f, 0.03], hemi: [0x8a96ad, 0x2a2e36, 0.7], dir: [0xffb27a, 0.4, [-12, 5, -3]] },
       night: { bg: 0x0d131d, fog: [0x19212d, 0.035], hemi: [0x3d4d6a, 0x101216, 0.45], dir: [0x8aa0c8, 0.15, [4, 12, 6]] },
-      dark: { bg: 0x030406, fog: [0x07080b, 0.085], hemi: [0x1c2433, 0x050505, 0.12], dir: [0x2a3550, 0.04, [4, 12, 6]] },
-      sun: { bg: 0xb9d4ea, fog: [0xdad3c2, 0.011], hemi: [0xfff4e0, 0x6a6558, 1.15], dir: [0xffe1a8, 1.7, [8, 10, -6]] },
+      dark: { bg: 0x07090c, fog: [0x090b0f, 0.12], hemi: [0x1c2433, 0x050505, 0.1], dir: [0x2a3550, 0.03, [4, 12, 6]] },
+      sun: { bg: 0xa6cdf0, fog: [0xecd6aa, 0.01], hemi: [0xfff0d8, 0x7a6a52, 1.1], dir: [0xffd690, 2.2, [8, 10, -6]] },
       sunday: { bg: 0x8e969d, fog: [0x979fa7, 0.026], hemi: [0xcfd6de, 0x44484e, 0.92], dir: [0xd8dfe6, 0.5, [-6, 12, 4]] },
     },
     build, marks, anchors, cams, zones, colliders, floor, update,
     puddles: PUDDLES,   // [x, z, rx, rz] ellipses (Keep Up: puddles slow you down)
     props: ['lamp_1', 'lamp_2', 'lamp_3', 'lamp_4', 'lamp_5', 'lamp_6', 'lamp_7', 'lamp_8', 'bell', 'bike', 'bike_chain', 'cupboard_door', 'lodge_door',
-      'machine', 'machine_wrap', 'machine_screen', 'machine_wire', 'footprints', 'scarf', 'pigeons', 'umbrella_crowd', 'toast_1', 'toast_2', 'toast_3',
+      'machine', 'machine_prepaid', 'machine_wrap', 'machine_screen', 'machine_wire', 'footprints', 'scarf', 'pigeons', 'umbrella_crowd', 'toast_1', 'toast_2', 'toast_3',
       'glasses', 'key_brass', 'swivel_chair', 'yes_sign', 'iron_gate_l', 'iron_gate_r', 'porter', 'windows_lit', 'cyclist', 'lodge_light'],
     ambience: { rain: true, loops: [], room: 'wet' },
   };

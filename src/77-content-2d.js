@@ -154,7 +154,7 @@
     const P = (n) => c.world.prop(n), f = state.flags;
     const m = P('machine'); if (m) { m.visible = true; m.position.set(...MACHINE_DESK); m.rotation.set(0, -0.3, 0); }
     for (const [n, v] of [['machine_wrap', false], ['machine_wire', !!f.machine_wired], ['swivel_chair', false], ['yes_sign', false], ['glasses', false],
-      ['bike', !f.part_bike], ['bike_chain', !f.part_bike], ['key_brass', !has('key_brass') && !f.nuala_done], ['umbrella_crowd', true]]) { const o = P(n); if (o) o.visible = v; }
+      ['bike', !f.part_bike], ['bike_chain', !f.part_bike], ['key_brass', !has('key_brass') && !f.nuala_done], ['umbrella_crowd', true], ['machine_prepaid', !f.prepaid_dead]]) { const o = P(n); if (o) o.visible = v; }
     for (let i = 1; i <= 3; i++) { const o = P('toast_' + i); if (o) o.visible = (f.toast_n | 0) >= i && !f.day_done; }
     chalk(c);
     const cd = P('cupboard_door'); if (cd) cd.rotation.y = 0;
@@ -446,9 +446,9 @@
       { id: 'bell_rec', at: [0, 0, 0], r: 14, only: 'chase', sample: 'bell', when: () => inSquare() && BELL.left > 0 },
       { id: 'gutter', at: 'gutter', r: 1.4, only: 'chase', sample: 'rain', when: out },
       // --- doors: the Buttery (toast), the Arts Building (the lecture theatre)
-      { id: 'buttery_in', at: 'buttery_door', r: 1.1, verb: 'Go in', when: out, door: { to: { set: 'buttery', mark: 'door_in' }, kind: 'wood' }, do: butteryDress },
+      { id: 'buttery_in', at: 'buttery_door', r: 1.1, verb: 'Go in', when: out, door: { to: { set: 'buttery', mark: 'door_in' }, kind: 'wood' }, do: (c) => { butteryDress(c); c.music('buttery_radio', { fade: 1 }); } },
       { id: 'buttery_out', at: [-7.65, 1.3, 0], r: 0.9, verb: 'Go out', when: inButtery,
-        door: { to: { set: 'square', mark: [7.27, 0, 12.9, PI], env: 'rain' }, kind: 'wood' }, do: squareDress },
+        door: { to: { set: 'square', mark: [7.27, 0, 12.9, PI], env: 'rain' }, kind: 'wood' }, do: (c) => { squareDress(c); c.music('dublin', { fade: 2 }); } },
       { id: 'arts_in', at: 'arts_door', r: 1.1, verb: 'Go in', when: out, door: { to: { set: 'theatre', mark: [0, 5.7, 14.2, PI], env: 'day' }, kind: 'wood' }, do: theatreDress },
       { id: 'theatre_out', at: [0, 5.7, 15.1], r: 0.55, verb: 'Go out', when: inTheatre,
         door: { to: { set: 'square', mark: [0, 0, -12.9, 0], env: 'rain' }, kind: 'wood' }, do: squareDress },

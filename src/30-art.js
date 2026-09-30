@@ -34,7 +34,7 @@ const mat = (() => {
     if (m) return m;
     m = new THREE.MeshLambertMaterial({ color: c, flatShading: true, vertexColors: true, map: o.map || null,
       transparent: !!o.transparent, opacity: o.opacity ?? 1, side: o.side ?? THREE.FrontSide });
-    if (o.transparent) m.depthWrite = o.depthWrite ?? false;
+    if (o.transparent) { m.depthWrite = o.depthWrite ?? false; m.forceSinglePass = true; }   // double-sided glass in one pass (two passes re-pick the program every frame)
     if (o.emissive != null) { m.emissive.set(o.emissive); m.emissiveIntensity = o.emissiveIntensity ?? 1; if (o.map) m.emissiveMap = o.map; }
     m.defaultAttributeValues = { color: [1, 1, 1] };
     cache.set(key, m);
@@ -237,7 +237,7 @@ const buildCharacter = (() => {
     c.stroke(); c.restore();
   }
   canvasTex.yes = drawYes;   // shared handwritten "Yes" painter for sets/cards: canvasTex.yes(ctx, x, y, height, color)
-  let atlasMat = null;
+  let atlasMat = null, skinMat = null;   // skinned bodies get their own copy: one material on skinned + plain meshes re-picks its program at every switch
   const atlas = () => atlasMat || (atlasMat = matTex(canvasTex(AT, AT, (c) => {
     c.fillStyle = '#fff'; c.fillRect(0, 0, AT, AT);
     let q = 12345; const r = () => ((q = (q * 16807) % 2147483647) / 2147483647);
@@ -850,7 +850,8 @@ const buildCharacter = (() => {
       hair(L, hs);
     }, PART.map((n) => parts[n].matrixWorld));
 
-    const mesh = new THREE.SkinnedMesh(geo, atlas());
+    if (!skinMat) { skinMat = atlasMat.clone(); skinMat.defaultAttributeValues = atlasMat.defaultAttributeValues; }
+    const mesh = new THREE.SkinnedMesh(geo, skinMat);
     mesh.frustumCulled = false; mesh.name = 'body';
     body.add(mesh);
     body.updateMatrixWorld(true);

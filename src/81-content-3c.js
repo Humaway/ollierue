@@ -196,6 +196,7 @@
       if (r) { for (const n of ['headphones', 'walkman', 'brick']) if (r.attach[n]) r.attach[n].visible = false; r.face.tears = 0; }
       for (const k in kit) if (kit[k].parent) kit[k].removeFromParent();
       if (lcd) lcd.visible = false;
+      if (hiss) { hiss.stop(0.3); hiss = null; }   // (3.8's tape hiss)
     };
     addUpdate(u);
   }
@@ -709,7 +710,7 @@
     if (!c.flow.skipping && !TEST.auto) document.querySelector('#dlg .opts button')?.click();   // YES (not a synthetic key: that flips the input scheme)
     await p;
     c.sfx('kettle');
-    saveGame(); c.ui.toast('Saved.');
+    if (saveGame()) c.ui.toast('Saved.');
   }
   const steam = (c) => c.world.puff('kettle', { n: 16, speed: 0.25, life: 1.8, color: 0xf2f2f2 });
 

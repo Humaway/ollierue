@@ -119,6 +119,21 @@ const { world, cam, frame, player } = (() => {
     if (!alive) pz.visible = false;
   }
 
+  // one material on plain and instanced meshes (or instanced with and without colours) makes three re-pick its
+  // program at every switch, every frame (garbage + CPU): the instanced ones get a cached twin (warmed with the set)
+  const TW = new Map(), vk = (o) => (o.isInstancedMesh ? (o.instanceColor ? 4 : 2) : o.isSkinnedMesh ? 8 : 1);
+  function twins(group) {
+    const used = new Map();
+    group.traverse((o) => { if (o.material && !Array.isArray(o.material)) used.set(o.material, (used.get(o.material) || 0) | vk(o)); });
+    group.traverse((o) => {
+      const u = o.isInstancedMesh && used.get(o.material);
+      if (!(u & (u - 1))) return;
+      const m = o.material, k = vk(o), t = TW.get(m) || TW.set(m, {}).get(m);
+      if (!t[k]) { t[k] = m.clone(); t[k].defaultAttributeValues = m.defaultAttributeValues; }
+      o.material = t[k];
+    });
+  }
+
   function build(id) {
     const def = SETS[id];
     if (!def) throw new Error('RUE: no SETS.' + id);
@@ -130,6 +145,7 @@ const { world, cam, frame, player } = (() => {
     scene.add(hemi, dir, spot, spot.target);
     const group = def.build();
     scene.add(group);
+    twins(group);
     const props = {};
     group.traverse((o) => { if (o.name && !props[o.name]) props[o.name] = o; });
     const anchors = {};
@@ -170,6 +186,15 @@ const { world, cam, frame, player } = (() => {
     }
   }
   function upload(e) { renderer.compile(e.scene, camera); e.scene.traverse(texUp); }
+  const PR = [];
+  function prime(e) {   // draw all of it (hidden props too) into one pixel: every buffer uploads inside the build's faded frame, not when it first shows
+    e.scene.traverse((o) => { PR.push(o, o.visible, o.frustumCulled); o.visible = true; o.frustumCulled = false; });
+    renderer.setScissorTest(true); renderer.setScissor(0, 0, 1, 1);
+    renderer.render(e.scene, camera);
+    renderer.setScissorTest(false);
+    for (let i = 0; i < PR.length; i += 3) { PR[i].visible = PR[i + 1]; PR[i].frustumCulled = PR[i + 2]; }
+    PR.length = 0;
+  }
   function disposeGeo(e) { e.scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); }
   function retire(e) {
     for (let i = A.length - 1; i >= 0; i--) if (A[i].set === e) despawnA(A[i]);
@@ -183,7 +208,7 @@ const { world, cam, frame, player } = (() => {
   function ensure(id) {             // live entry for id (builds it), marked most recently used
     let e = live.get(id);
     if (e) { live.delete(id); live.set(id, e); return e; }
-    e = build(id); live.set(id, e); upload(e); trim();
+    e = build(id); live.set(id, e); upload(e); prime(e); trim();
     return e;
   }
   function showE(e) {
@@ -1178,6 +1203,7 @@ const { world, cam, frame, player } = (() => {
       trim();
     },
     preload(id) { ensure(id); return Promise.resolve(); },
+    adopt(look, rig) { (pool[look] ||= []).push(rig); },   // boot's warmed rigs: the first spawn of each look builds nothing
     show(id) { showE(ensure(id)); trim(); },
     warm(id) {
       const had = live.get(id), e = had || build(id), hidden = [];

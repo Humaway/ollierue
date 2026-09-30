@@ -68,7 +68,7 @@ button { font: inherit; color: inherit; cursor: pointer; pointer-events: auto; b
   background: rgba(20,29,58,.82); border: 1px solid rgba(255,210,31,.55); font-size: 17px; }
 #prompt b { display: inline-block; padding: 2px 9px; margin-right: 8px; border-radius: 999px; background: var(--yes); color: var(--navy); font-size: 14px; letter-spacing: .06em; }
 #prompt b.no { background: #e8e8ee; }
-#ui.talking #prompt { opacity: 0; }
+#ui.talking #prompt, #ui.talking #swap, #ui.invopen #swap { opacity: 0; }
 #toast { right: 24px; bottom: 24px; z-index: 11; padding: 8px 18px; border-radius: 10px; background: rgba(20,29,58,.85); border-top: 2px solid var(--yes);
   font-size: 17px; opacity: 0; transition: opacity .35s; }
 #toast.show { opacity: 1; }
@@ -114,7 +114,7 @@ button { font: inherit; color: inherit; cursor: pointer; pointer-events: auto; b
 /* JARVIS pop-ups: tired corporate web app */
 #pops { inset: 0; z-index: 5; }
 .jvw { position: absolute; left: 0; top: 0; }
-.jv { width: 340px; background: #fff; color: #2b2f36; font-family: var(--sys); font-size: 14px; line-height: 1.4; text-align: left;
+.jv { width: 340px; max-width: calc(100vw - 20px); background: #fff; color: #2b2f36; font-family: var(--sys); font-size: 14px; line-height: 1.4; text-align: left;
   border: 1px solid #8e96a4; border-radius: 3px; box-shadow: 0 3px 0 rgba(0,0,0,.18), 0 8px 16px rgba(0,0,0,.25); pointer-events: auto;
   animation: jvpop .16s ease-out; }
 .jv.shake { animation: jvshake .42s ease-out; }
@@ -199,6 +199,7 @@ button { font: inherit; color: inherit; cursor: pointer; pointer-events: auto; b
 #menu .body table { border-collapse: collapse; width: 100%; font-size: 15px; }
 #menu .body td, #menu .body th { padding: 5px 12px; border-bottom: 1px solid rgba(255,255,255,.1); text-align: left; }
 #menu .body th { color: var(--yes); font-size: 13px; letter-spacing: .08em; }
+@media (max-width: 600px) { #menu .body table { font-size: 12px; } #menu .body td, #menu .body th { padding: 4px 4px; font-size: 11px; letter-spacing: 0; } #menu .body th { font-size: 10px; } }
 #menu .body canvas { display: block; margin: 0 auto; max-width: 100%; max-height: 60vh; }
 #menu .body p { margin: 0 0 12px; text-align: center; }
 #menu .body .cr b { color: var(--yes); letter-spacing: .12em; font-size: 13px; display: block; margin-top: 10px; }
@@ -222,7 +223,15 @@ button { font: inherit; color: inherit; cursor: pointer; pointer-events: auto; b
 #t-pause { right: 14px; top: 64px; width: 46px; height: 46px; font-size: 16px; }
 #ui.touchui #prompt { bottom: 200px; } /* clear of the stick and the YES/NO buttons on narrow phones */
 #ui.touchui #dlg { left: 12px; width: calc(100% - 228px); bottom: 12px; }
-#ui.touchui.talking #stick, #ui.touchui.talking #t-swap, #ui.touchui.talking #t-bag { opacity: 0; pointer-events: none; }
+#ui.touchui.talking #stick, #ui.touchui.talking #t-swap, #ui.touchui.talking #t-bag, #ui.touchui.invopen #stick, #ui.touchui.invopen #t-swap { opacity: 0; pointer-events: none; }
+#ui.touchui #inv { left: 12px; transform: none; width: calc(100% - 228px); bottom: 12px; } /* beside YES/NO, like the dialogue box */
+#ui.touchui #swap { bottom: 190px; } /* above the stick */
+#ui.menuon #touch { display: none; } /* title and menus: tap the items */
+#ui.touchui #toast, #ui.touchui.talking #toast { top: 120px; bottom: auto; right: 14px; } /* under the pause button, clear of the buttons */
+@media (max-width: 600px) { /* phones in portrait: the box goes full width, above YES/NO */
+  #ui.touchui #dlg, #ui.touchui #inv { width: calc(100% - 24px); bottom: 196px; }
+  #ui.touchui #dlg .face { width: 64px; height: 64px; }
+}
 
 /* F2 overlay */
 #perf { left: 8px; top: 48px; z-index: 30; padding: 6px; background: rgba(0,0,0,.72); border-radius: 6px; font: 11px/1.35 var(--mono); color: #cfe; }

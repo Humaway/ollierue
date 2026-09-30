@@ -41,7 +41,12 @@ async function boot() {
     if (hasWorld()) world.render(acc / step);
     emit('render', acc / step);
     perf.draw();
+    if (renderer.info.programs.length > progN) {   // every shader should have been compiled by the loader
+      progN = renderer.info.programs.length;
+      if (TEST.auto) console.warn('RUE: shader compiled mid-game in ' + flow.sceneId + ' step ' + flow.stepIndex + ' (' + cam.name + ')');
+    }
   }
+  let progN = Infinity;
   requestAnimationFrame(frame);
 
   // ---------------------------------------------------------- loader
@@ -61,6 +66,13 @@ async function boot() {
       sc.add(new THREE.HemisphereLight(0xfff2e0, 0x404058, 1.4));
       const dl = new THREE.DirectionalLight(0xffffff, 1.7); dl.position.set(1.2, 2.5, 3); sc.add(dl);
       const sp = new THREE.SpotLight(0xffffff, 0); sc.add(sp, sp.target);
+      // program families only mid-game meshes use (Rue's walk-2 smears: transparent, instanced + colours): compile them now
+      const px = canvasTex(4, 4, () => {}, { key: 'warm_px' });
+      for (const tr of [false, true]) for (const map of [null, px]) for (const col of [false, true]) {
+        const im = new THREE.InstancedMesh(new THREE.BoxGeometry(0.001, 0.001, 0.001), mat(0xffffff, { transparent: tr, map, key: 'warm_family' }), 1);
+        if (col) im.setColorAt(0, sc.background);
+        im.frustumCulled = false; sc.add(im);
+      }
       warm = { sc, cam: new THREE.PerspectiveCamera(30, 1, 0.05, 30), v: new THREE.Vector3() };
     }
     const rig = buildCharacter(id), v = warm.v, c = warm.cam, gl = renderer.domElement;
@@ -77,6 +89,7 @@ async function boot() {
     pc.getContext('2d').drawImage(gl, (gl.width - side) / 2, (gl.height - side) / 2, side, side, 0, 0, 128, 128); // same task as the render
     portraitURL.bake(id, pc);
     warm.sc.remove(rig.root);
+    if (typeof world !== 'undefined' && world.adopt) world.adopt(id, rig);   // its first spawn reuses it: no build, no upload mid-game
   };
   const jobs = [];
   if (typeof AUDIO !== 'undefined') jobs.push(() => AUDIO.prerender());
@@ -90,6 +103,7 @@ async function boot() {
   }
   renderer.setRenderTarget(null); renderer.clear();
   perf.adapt = true;
+  progN = renderer.info.programs.length;
 
   if (TEST.auto) {
     ld.classList.add('off');

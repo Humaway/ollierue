@@ -288,7 +288,8 @@ const { flow, hotspots, inventory, runSteps, playCutscene } = (() => {
         if (d <= r * r && d < bd) { bd = d; best = h; }
       }
       if (best !== near || inventory.selected !== nearSel) { near = best; nearSel = inventory.selected; ui.prompt(best ? label(best) : null); }
-      if (!best) { if (inventory.selected && input.pressed('no')) { input.consume('no'); inventory.selected = null; } return; }
+      if (inventory.selected && input.pressed('no')) { input.consume('no'); inventory.selected = null; return; }   // NO puts the item away, near a spot or not
+      if (!best) return;
       const key = best.verb === 'NO' && !inventory.selected ? 'no' : 'yes';
       if (!input.pressed(key)) return;
       input.consume(key);
@@ -354,7 +355,7 @@ const { flow, hotspots, inventory, runSteps, playCutscene } = (() => {
       }
       if (done && h.flag) setFlag(h.flag, true);
       if (done && h.once) used.add(h);
-      if (boiled) { saveGame(); ui.toast('Saved.'); }
+      if (boiled && saveGame()) ui.toast('Saved.');   // (storage blocked: no false "Saved.")
     }
     return {
       list, used, update,
@@ -419,7 +420,7 @@ const { flow, hotspots, inventory, runSteps, playCutscene } = (() => {
           if (mg !== me) return;
           mg = null;
           try { if (m.end) m.end(r); } catch (e) { console.error('RUE: minigame ' + id + ' end()', e); }
-          clearOverlay(); ovEl.classList.remove('off'); mgEl.textContent = '';
+          clearOverlay(); ovEl.classList.add('off'); mgEl.textContent = '';   // hidden between minigames (start shows it)
           flow.result = r; res(r);
         },
         overlay: { canvas: ovEl, ctx: ovEl.getContext('2d'), get w() { return innerWidth; }, get h() { return innerHeight; },

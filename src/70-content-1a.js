@@ -44,6 +44,11 @@
     P('tv_screen')?.userData.show?.('off');
     P('monitor_screen')?.userData.show?.('loading');
     const d = P('backroom_door'); if (d) { d.rotation.y = 0; d.userData.open = undefined; }
+    // Luke's office is locked in Act 1 (as in 1.4/1.5): a collider in its doorway while 1.1 runs
+    const cols = SETS.reddy.colliders, box = [9.4, -12.75, 10.4, -12.5];
+    cols.push(box);
+    const u = () => { if (flow.sceneId === '1.1') return; removeUpdate(u); cols.splice(cols.indexOf(box), 1); };
+    addUpdate(u);
   }
   const earbudOut = (c) => { const a = c.world.actor('chase'); if (a && a.rig.attach.earbud) a.hold(a.rig.attach.earbud, 'L'); };
   // "head nodding" to the demo (88 bpm) on the walk in: an upper-body loop, so the legs keep walking.

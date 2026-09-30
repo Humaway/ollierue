@@ -562,6 +562,12 @@
       R.bus.position.z = -14 + u.t * 11; R.bus.visible = u.t < 4.2;
       for (let i = 0; i < 3; i++) { const w = R.walkers[i], s = (t * (1.1 + i * 0.15) + i * 17) % 48; w.position.z = i === 1 ? 24 - s : -24 + s; w.position.y = 1.3 + 0.02 * Math.abs(Math.sin(t * 6 + i)); }
       R.crowd.userData.fidget(dt);
+      // Bernie wipes down the counter while nobody needs her (straight back to idle for any shot, line or walk)
+      const bn = typeof world !== 'undefined' && world.setId === 'buttery' && world.actor('bernie');
+      if (bn) {
+        const busy = bn.rig.talking || bn.mv.on || (typeof cam !== 'undefined' && cam.cutscene);
+        if (bn.anim === 'idle' && !busy) bn.play('wipe'); else if (bn.anim === 'wipe' && busy) bn.play('idle');
+      }
     }
     return {
       env: {

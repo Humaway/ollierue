@@ -52,7 +52,7 @@
     const m = P('machine'); if (m) { m.visible = true; m.position.set(...MACHINE_FLOOR); m.rotation.set(0, 0.6, 0.25); }
     const w = P('machine_wrap'); if (w) w.visible = false;
     const wi = P('machine_wire'); if (wi) wi.visible = false;
-    for (const n of ['swivel_chair', 'yes_sign']) { const o = P(n); if (o) o.visible = true; }
+    for (const n of ['swivel_chair', 'yes_sign', 'machine_prepaid']) { const o = P(n); if (o) o.visible = true; }
     const cd = P('cupboard_door'); if (cd) cd.rotation.y = 0;
     habit(c);
   }
@@ -635,6 +635,7 @@
     { prop: 'crowd', fn: (o) => o.userData.look && o.userData.look(null) },
     // [WIDE · from the lectern] The boys, still standing, sit down very slowly.
     { place: 'rue19', at: 'rue_sit' }, { act: [['rue19', 'sit']] },
+    { do: (c) => { const r = c.world.actor('rue19'); if (r && r.rig.attach.brick) r.rig.attach.brick.visible = false; } },   // (pooled rig: the brick shows again only while he uses it)
     { face: 'luka', to: PI }, { face: 'chase', to: PI },
     { shot: 'CAM', pos: [0.45, 2.3, -3.6], look: [1.8, 3.8, 6.5], fov: 28 },
     { wait: 0.8 },

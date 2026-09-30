@@ -9,11 +9,11 @@
 SETS.reddy = (() => {
   const PI = Math.PI, H = PI / 2;
   const NAVY = 0x141d3a, YEL = 0xffd21f, WHITE = 0xf2f3f4, WOOD = 0xc8a476, CARD = 0xb98d5a, DARK = 0x1d1f24;
-  const OUT = [1.07, 0.99, 0.86], IN = [0.9, 0.97, 1.06], BOH = [0.94, 0.98, 1.01];   // warm sun / cool fluoro tints
+  const OUT = [1.15, 1.0, 0.76], IN = [0.86, 0.96, 1.1], BOH = [0.9, 0.97, 1.06];   // warm sun / cool fluoro tints
   const COL = [];                // colliders (filled by build)
   const R = {};                  // live prop refs from the last build (update/dress use them)
   const tc = new THREE.Color(), m4 = new THREE.Matrix4();
-  let b = null, tint = OUT, XF = null, T = null, M = null, SUNM = null;
+  let b = null, tint = OUT, XF = null, T = null, M = null, SUNM = null, CUST = null;
 
   // ---------------------------------------------------------- geometry helpers (into the current Builder `b`)
   function put(g, hex, m) {
@@ -326,7 +326,7 @@ SETS.reddy = (() => {
       c.clearRect(0, 0, w, h);
       seed = 29;   // mirage: broken dashes of reflected sky, fading out upward
       for (let y = 0; y < h; y += 2) for (let x = -8; x < w; x += 6 + rnd() * 10) {
-        const k = y / h; c.fillStyle = `rgba(${rnd() > 0.5 ? '225,238,255' : '180,210,250'},${(k * k * 0.5 * rnd()).toFixed(3)})`;
+        const k = y / h; c.fillStyle = `rgba(${rnd() > 0.5 ? '225,238,255' : '180,210,250'},${(k * k * 0.9 * rnd()).toFixed(3)})`;
         c.fillRect(x + Math.sin(y * 0.7) * 3, y, 6 + rnd() * 12, 2);
       }
     }, { key: 'reddy_shim', repeat: [10, 1] });
@@ -927,6 +927,12 @@ SETS.reddy = (() => {
     R.sun = P(new THREE.Group()); R.sun.name = 'sun'; R.sun.add(sun, halo); halo.position.z = -0.3;
     R.sun.position.set(-2, 54, -26); R.sun.lookAt(-2, 2, 10);
     R.rain = P(makeRain({ box: [-26, 3.2, 26, 34], top: 12, count: 5000 })); R.rain.visible = false;
+    // two customers browse (accessories wall, the right display table): real rigs, built once, shown by dress()
+    CUST ||= [['customer_b', -8.05, -12.2, -10.0, -H], ['customer_a', -0.6, -10.6, -9.4, H]].map(([id, x, z0, z1, ry]) => {
+      const rig = buildCharacter(id); rig.root.add(blobShadow());
+      return { rig, x, z0, z1, ry, z: z1, to: z1, yaw: ry, a: 'idle', pick: 'idle', at: 0, t: 1, col: [1e4, 1e4, 1e4, 1e4] };
+    });
+    for (const c of CUST) { root.add(c.rig.root); COL.push(c.col); }
     // dress for the current scene on the first update
     R.scene = null; R.env = null;
     dress(typeof state !== 'undefined' ? state.scene : '1.1');
@@ -953,6 +959,7 @@ SETS.reddy = (() => {
     R.postit.visible = !from('2.1');
     R.car.visible = id === '3.5'; R.car.position.set(-2.3, 0, 20.75); R.car.rotation.y = PI; R.carT = 1; R.carDoor.rotation.y = 0;
     R.rueBox.visible = id === '3.5' || id === '3.7';
+    for (const c of CUST) { c.rig.root.visible = id === '1.2' || id === '1.3' || id === '3.6' || id === 'E'; c.col[0] = c.col[1] = c.col[2] = c.col[3] = 1e4; }
     for (const o of [R.contents, R.dicta, R.teas, R.parcel, R.mphone, R.flash]) o.visible = false;
     R.bdoor.rotation.y = 0; R.odoor.rotation.y = 0; R.bdoor.userData.open = R.odoor.userData.open = undefined;
     R.sign.userData.set(from('1.2'));
@@ -973,7 +980,7 @@ SETS.reddy = (() => {
     const dx = a.pos.x + 2, dz = a.pos.z;
     if (dx * dx + dz * dz < 5.3) near = true;
   }
-  const smooth = (u) => u * u * (3 - 2 * u);
+  const smooth = (u) => u * u * (3 - 2 * u), WALKP = { speed: 0.42 };
   function update(dt, ctx) {
     if (!R.root) return;
     const t = ctx.t;
@@ -1020,13 +1027,29 @@ SETS.reddy = (() => {
       R.car.position.set(-26 + 24 * u, 0, 4.8); R.car.rotation.y = H;
     }
     R.cars[0].position.x = ((t * 11) % 140) - 70; R.cars[1].position.x = 70 - ((t * 9 + 60) % 140);
+    // customers: look at the stock, reach for something, drift a step along the display now and then
+    for (let i = 0; i < CUST.length; i++) {
+      const c = CUST[i], r = c.rig.root;
+      if (!r.visible) continue;
+      let want = c.pick, face = c.ry;
+      if (Math.abs(c.to - c.z) > 0.02) { const sg = Math.sign(c.to - c.z); c.z += sg * Math.min(Math.abs(c.to - c.z), 0.7 * dt); want = 'walk'; face = sg > 0 ? 0 : PI; }
+      else if ((c.t -= dt) <= 0) {
+        const k = Math.random(); c.t = 2.5 + Math.random() * 3.5;
+        if (k < 0.3) c.to = c.z0 + Math.random() * (c.z1 - c.z0); else c.pick = k < 0.5 ? 'point' : k < 0.7 ? 'look_down' : k < 0.8 ? 'phone' : 'idle';
+      }
+      if (want !== c.a) { c.a = want; c.at = 0; }
+      c.at += dt; c.yaw += ((((face - c.yaw + PI) % (2 * PI)) + 2 * PI) % (2 * PI) - PI) * Math.min(1, dt * 6);
+      r.position.set(c.x, 0, c.z); r.rotation.y = c.yaw;
+      c.rig.pose(c.a, c.at, WALKP); c.rig.update(dt);
+      c.col[0] = c.x - 0.28; c.col[1] = c.z - 0.28; c.col[2] = c.x + 0.28; c.col[3] = c.z + 0.28;
+    }
   }
 
   // ---------------------------------------------------------- data
   return {
     env: {
-      day:       { bg: 0x72bdf8, fog: [0xf3dcb2, 0.011], hemi: [0xf2f6ff, 0xa89880, 1.2], dir: [0xffe6c2, 1.35, [3, 14, 4]], rain: 0 },
-      halloween: { bg: 0x7cc2f6, fog: [0xf1d4a6, 0.012], hemi: [0xf4f4ff, 0xa89478, 1.15], dir: [0xffdcae, 1.35, [4, 13, 5]], rain: 0 },
+      day:       { bg: 0x6ab8f6, fog: [0xf4d09a, 0.013], hemi: [0xeef4ff, 0xb09068, 1.1], dir: [0xfff0dc, 1.6, [3, 14, 4]], rain: 0 },
+      halloween: { bg: 0x74bef6, fog: [0xf2cc96, 0.013], hemi: [0xf0f2ff, 0xae8c66, 1.1], dir: [0xffecd4, 1.6, [4, 13, 5]], rain: 0 },
       rain:      { bg: 0x8b96a1, fog: [0x959fa9, 0.022], hemi: [0xdde4ec, 0x56606a, 1.05], dir: [0xc8d4e0, 0.5, [4, 12, 6]], rain: 1 },
     },
     build,

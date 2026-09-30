@@ -56,6 +56,20 @@
     pickUp('brick'); pickUp('walkman');
     show(c, 'rue19', 'brick', false); show(c, 'rue19', 'walkman', true); show(c, 'rue19', 'headphones', true); show(c, 'rue19', 'scarf', true);
   }
+  // Leaving 2.11–2.13 early (quit, scene select): the pooled rigs and Rue's put-down things go back as they were
+  const RIGS = {};
+  function watch(c) {
+    for (const id of ['rue19', 'luka', 'chase']) { const a = actor(c, id); if (a) RIGS[id] = a.rig; }
+    if (RIGS.u) return;
+    addUpdate(RIGS.u = () => {
+      if (['2.11', '2.12', '2.13'].includes(flow.sceneId)) return;
+      removeUpdate(RIGS.u); RIGS.u = null;
+      pickUp('brick'); pickUp('walkman'); if (COAT && COAT.parent) COAT.parent.remove(COAT);
+      const g = RIGS.rue19 && RIGS.rue19.attach;
+      if (g) { if (g.brick) g.brick.visible = false; for (const n of ['walkman', 'headphones', 'scarf']) if (g[n]) g[n].visible = true; }
+      for (const id of ['luka', 'chase']) { const p = RIGS[id] && RIGS[id].attach.phone; if (p) p.visible = false; }
+    });
+  }
 
   // =================================================================== 2.11 — "The Phone That Never Rings"
   const CHASE_STEP = [-1.0, 0, 3.97, 0];
@@ -80,9 +94,10 @@
   }
 
   function dress211(c) {
+    watch(c);
     tidyRue(c);
     seat(c, 'rue19', 'steps_rue', 0.46, 'fake_call');
-    const cy = c.world.prop('cyclist'); if (cy) cy.visible = false;
+    for (const n of ['cyclist', 'bike', 'bike_chain']) { const o = c.world.prop(n); if (o) o.visible = false; }   // (the bike went to the lab in 2.6)
   }
   function setDown(c) {   // the phone on the stone between them, standing up, its dead display toward the lens; the Walkman beside it
     show(c, 'rue19', 'brick', false); show(c, 'rue19', 'walkman', false);
@@ -220,6 +235,7 @@
   }
   function dress212(c) {
     const P = (n) => c.world.prop(n);
+    watch(c);
     tidyRue(c);
     seat(c, 'rue19', 'rue_seat', 0.46, 'idle');
     coat(c, true);
@@ -357,16 +373,18 @@
   CUTSCENES['2.12_bell'] = [
     { do: (c) => { const r = actor(c, 'rue19'); if (r) { r.walkAnim = 'walk'; r.face(PI, 0); } } },
     { prop: 'umbrella_crowd', visible: false },   // a grey square with nobody in it
+    { prop: 'bike', visible: false }, { prop: 'bike_chain', visible: false },   // (the bike went to the lab in 2.6)
     // [CRANE · up to the silent bell and back down] He sits on its steps.
     { shot: 'CAM', pos: [0.45, 2.0, -1.1], look: [0.35, 1.85, 2.6], fov: 50, to: { pos: [0.25, 8.3, 0.25], look: [0.25, 10.3, 0.3], fov: 55 }, dur: 4.5 },
     { wait: 1.2 },
     { move: 'rue19', to: 'steps_rue', nowait: true },   // (out of shot below while the camera is on the bell)
     { wait: 2.2 },
-    { do: (c) => seat(c, 'rue19', 'steps_rue', 0.46, 'head_hands') },
+    { do: (c) => seat(c, 'rue19', 'steps_rue', 0.46, 'look_down') },   // (head-in-hands only from above: rule 7)
     { wait: 1.2 },
     { shot: 'CAM', pos: [0.25, 8.3, 0.25], look: [0.25, 10.3, 0.3], fov: 55, to: { pos: [0.3, 2.05, 1.3], look: [0.45, 1.0, 4.8], fov: 50 }, dur: 4.5 },
     { wait: 4 },
     // [WIDE · high above] A tiny figure on the steps of a grey square. Hold two seconds. Fade.
+    { act: [['rue19', 'head_hands']] },
     { shot: 'INSERT', at: 'sky' },
     { wait: 2 },
     { music: null, fade: 1.4 },
@@ -399,10 +417,11 @@
     const P = (n) => c.world.prop(n), f = state.flags;
     const m = P('machine'); if (m) { m.visible = true; m.position.set(...MACHINE_DESK); m.rotation.set(0, -0.3, 0); }
     for (const [n, v] of [['machine_wrap', false], ['machine_wire', true], ['swivel_chair', false], ['yes_sign', false], ['lodge_light', true], ['cyclist', false],
-      ['bike', !f.part_bike], ['bike_chain', !f.part_bike], ['scarf', true]]) { const o = P(n); if (o) o.visible = v; }
+      ['bike', !f.part_bike], ['bike_chain', !f.part_bike], ['scarf', true], ['machine_prepaid', !f.prepaid_dead]]) { const o = P(n); if (o) o.visible = v; }
     const cd = P('cupboard_door'); if (cd) cd.rotation.y = 0;
     for (let i = 1; i <= 8; i++) { const o = P('lamp_' + i); if (o) o.visible = true; }
     // Rue out on the steps in the rain, head in his hands; his scarf on lamp_4, his Walkman on the cobbles
+    watch(c);
     tidyRue(c);
     seat(c, 'rue19', 'steps_rue', 0.46, 'head_hands');
     show(c, 'rue19', 'scarf', false); show(c, 'rue19', 'walkman', false); show(c, 'rue19', 'headphones', false);   // (the headphones went with the Walkman)

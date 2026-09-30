@@ -154,14 +154,14 @@
     seat(r, 'look_up', 0.48);
     r.rig.face.eyes('closed');
   }
-  // the brick phone rings, a third time: LCD lit, the handset buzzing, the trill every 1.6 s
+  // the brick phone rings, a third time: LCD lit, the handset buzzing, the trill every 3 s (2.12's and 3.5's cadence)
   function ringThird(c) {
     const ph = c.world.prop('brick_phone');
     if (ph) ph.userData.ring = true;
     let n = 0;
-    const f = (dt) => {   // the trill every 1.6 s until he answers
+    const f = (dt) => {   // the trill every 3 s until he answers
       if (!ph || !ph.userData.ring || flow.sceneId !== 'E' || c.flow.skipping) { removeUpdate(f); return; }
-      if ((n -= dt) <= 0) { n = 1.6; sfx('brick_ring', { vol: 0.8 }); }
+      if ((n -= dt) <= 0) { n = 3; sfx('brick_ring', { vol: 0.8 }); }
     };
     addUpdate(f);
   }
@@ -400,7 +400,7 @@
     SAME_DESK,
     { wait: 0.8 },
     { do: ringThird },
-    { wait: 1.8 },                                                     // (two rings on his face)
+    { wait: 3.2 },                                                     // (two rings on his face)
     { do: smileUp },
     { wait: 0.7 },
     { do: answer },

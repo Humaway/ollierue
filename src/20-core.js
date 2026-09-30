@@ -229,13 +229,13 @@ function saveOptions() {
 
 // ------------------------------------------------------------ perf: F2 overlay + adaptive pixel ratio
 const perf = (() => {
-  const N = 600, ft = new Float32Array(N); // ~10 s of frame times
+  const N = 1200, ft = new Float32Array(N); // >= 10 s of frame times (up to 120 Hz)
   const el = document.getElementById('perf'), cv = el.querySelector('canvas'), cx = cv.getContext('2d'), pre = el.querySelector('pre');
   const touch = matchMedia('(pointer: coarse)').matches;
   const top = Math.min(devicePixelRatio || 1, touch ? 1.5 : 2);
   const levels = [2, 1.5, 1].filter((v) => v <= top);
   if (!levels.length || levels[0] !== top) levels.unshift(top);
-  let i = 0, on = false, n = 0, lvl = 0, winT = 0, winN = 0, good = 0;
+  let i = 0, on = false, n = 0, lvl = 0, winT = 0, winN = 0, good = 0, need = 3;
   const P = {
     adapt: false,
     toggle() { on = !on; el.classList.toggle('off', !on); },
@@ -245,15 +245,16 @@ const perf = (() => {
       winT += Math.min(ms, 50); winN++; // one hitch (tab switch, GC) shouldn't drop the resolution
       if (winT < 2000) return;
       const avg = winT / winN; winT = 0; winN = 0;
-      if (avg > 18 && lvl < levels.length - 1) { renderer.setPixelRatio(levels[++lvl]); good = 0; }
-      else if (avg < 12 && lvl > 0) { if (++good >= 3) { renderer.setPixelRatio(levels[--lvl]); good = 0; } }
+      // back up once it keeps up with vsync (a 60 Hz display never beats 16.7 ms); each fall doubles the wait (no see-saw)
+      if (avg > 18 && lvl < levels.length - 1) { renderer.setPixelRatio(levels[++lvl]); good = 0; need *= 2; }
+      else if (avg < 17.2 && lvl > 0) { if (++good >= need) { renderer.setPixelRatio(levels[--lvl]); good = 0; } }
       else good = 0;
     },
     draw() {
       if (!on) return;
       cx.fillStyle = '#111'; cx.fillRect(0, 0, 240, 64);
       let max = 0;
-      for (let k = 0; k < N; k++) if (ft[k] > max) max = ft[k];
+      for (let k = 1, sum = 0; k <= N && sum < 10000; k++) { const v = ft[(i - k + N) % N]; sum += v; if (v > max) max = v; }   // the last 10 s
       for (let k = 0; k < 240; k++) {
         const v = ft[(i - 240 + k + N) % N], hgt = Math.min(64, v * 64 / 50);
         cx.fillStyle = v < 17.5 ? '#4ade80' : v < 33.4 ? '#facc15' : '#f87171';

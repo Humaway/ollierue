@@ -238,7 +238,7 @@
       if (!DEV.on || flow.sceneId !== '3.1') { DEV.on = false; removeUpdate(f); return; }
       DEV.t += dt;
       if (DEV.t - DEV.k < 0.25) return;
-      DEV.k = DEV.t; DEV.d.dev = Math.min(0.62, DEV.t / 5.5);
+      DEV.k = DEV.t; DEV.d.dev = Math.min(0.3, DEV.t / 18);   // shapes stir; the front is 3.7's
       ui.card('polaroid', DEV.d);
       if (DEV.t > 5.6) { DEV.on = false; removeUpdate(f); }
     };
@@ -250,7 +250,7 @@
     playable: ['rue19', 'luka'], swap: false, hud: { battery: 0, bars: 3 }, music: 'dublin_major',
     spawn: { rue19: [-11.5, 0, 1.1, H] },
     steps: [
-      ['do', (c) => c.world.preload('lab')],
+      ['do', (c) => { c.world.preload('lab'); for (const n of ['bike', 'bike_chain']) { const o = c.world.prop(n); if (o) o.visible = false; } }],   // (the bike is the lab's now)
       ['minigame', 'rue_walk', { walk: 3 }],
       ['cutscene', '3.1_lab'],
       ['cutscene', '3.1_hall'],
@@ -476,7 +476,7 @@
   function lodgeDress(c) {
     const P = (n) => c.world.prop(n);
     const m = P('machine'); if (m) { m.visible = true; m.position.set(-24.75, 1.24, 2.72); m.rotation.set(0, 0, 0); }
-    for (const [n, v] of [['machine_wrap', true], ['machine_wire', false], ['swivel_chair', false], ['yes_sign', false], ['lodge_light', true], ['bike', false], ['bike_chain', false]]) { const o = P(n); if (o) o.visible = v; }
+    for (const [n, v] of [['machine_wrap', true], ['machine_wire', false], ['swivel_chair', false], ['yes_sign', false], ['lodge_light', true], ['bike', false], ['bike_chain', false], ['machine_prepaid', false]]) { const o = P(n); if (o) o.visible = v; }
     const cd = P('cupboard_door'); if (cd) cd.rotation.y = 0;
     const l = actor(c, 'luka'); if (l) { l.mood = null; l.habit = null; }
     const r = actor(c, 'rue19'); if (r) { r.walkAnim = 'walk'; r.setExpr('neutral'); }
