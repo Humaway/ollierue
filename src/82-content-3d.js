@@ -173,7 +173,7 @@
   }
   // back in the store, under the cut: the boys shoulder to shoulder at Chase's monitor, rain on the glass
   function storeBack(c) {
-    if (c.AUDIO && c.AUDIO.ambience) c.AUDIO.ambience({ rain: true, loops: ['aircon', 'fluoro'] });
+    if (c.AUDIO && c.AUDIO.ambience) c.AUDIO.ambience({ rain: true, loops: ['aircon'] });
     rueLanyard(c, false);
     const ph = c.world.prop('brick_phone'), pol = c.world.prop('polaroid'), b = c.world.prop('bell');   // (the office and the square are still live: leave them as found)
     if (ph) { ph.visible = true; ph.userData.ring = false; }
@@ -295,7 +295,7 @@
   CUTSCENES.E_open = [
     { fade: 'out', dur: 0 },
     { do: dressE },
-    amb(true, ['aircon', 'fluoro']),
+    amb(true, ['aircon']),
     // [WIDE · the car-park angle from 1.1] Rain on the store windows: the first in weeks.
     CARPARK,
     { act: [['grandson', 'umbrella']] },

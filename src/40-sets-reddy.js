@@ -1172,7 +1172,7 @@ SETS.reddy = (() => {
       'store_phone', 'window_flash', 'car_door', 'machine_sign', 'machine_phones', 'machine_straightener', 'machine_chair',
       'traffic', 'roof', 'sun', 'shimmer', 'streaks', 'rain',
     ],
-    ambience: { rain: false, loops: ['aircon', 'fluoro'], room: 'room' },
+    ambience: { rain: false, loops: ['aircon'], room: 'room' },
     update,
   };
 })();
