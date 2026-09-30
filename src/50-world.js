@@ -1137,6 +1137,7 @@ const { world, cam, frame, player } = (() => {
       a.root.rotation.y = a.prevRot + angTo(a.prevRot, a.rotY) * alpha;
       if (a.root.visible) a.rig.pose(a.poseName || 'idle', a.poseT + dtA, a.p);
     }
+    if (snap) copyCam(cp, cs);           // a cut since the last tick: never draw a frame in between the two shots
     camera.position.lerpVectors(cp.pos, cs.pos, alpha);
     lookI.lerpVectors(cp.look, cs.look, alpha);
     aimCam(camera, lookI, shotAt.on ? S.up : UPZ);

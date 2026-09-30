@@ -51,6 +51,8 @@
       if (cv && cv.getContext) { const x = cv.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, cv.width, cv.height); t.needsUpdate = true; }
     });
   }
+  // A censored line's pop-up stays where it landed, OK or no OK: JARVIS puts it straight back on the speaker's face.
+  const stamp = (id) => ({ popup: { msg: 'Language detected. This interaction has been flagged for coaching.', icon: 'warn', buttons: ['OK'], at: { actor: id }, ding: false } });
   const mood = (id, m) => ({ do: (c) => { const a = c.world.actor(id); if (a) a.mood = m; } });
 
   // The JARVIS screen on the counter monitor, as a readable INSERT card.
@@ -113,11 +115,34 @@
   };
   CARDS.jmon.size = [960, 600];
 
+  // Her dead phone on the counter: black glass with both their faces in it, looking down (Margaret left, Chase right).
+  CARDS.deadphone = (cx, w, h) => {
+    CARDS.phone(cx, w, h, { tone: 'dead' });   // black glass; the painter already lays in two faint heads and shoulders
+    const pw = w * 0.9, m = pw * 0.045, sx = w * 0.05 + m, sy = h * 0.02 + m, sw = pw - 2 * m, sh = h * 0.96 - 2 * m;
+    cx.save(); cx.beginPath(); cx.roundRect(sx, sy, sw, sh, pw * 0.13 - m); cx.clip();
+    const face = (fx, fy, hair, messy) => {
+      const x = sx + sw * fx, y = sy + sh * fy, r = sw * 0.13;
+      cx.fillStyle = 'rgba(215,200,190,.16)'; cx.beginPath(); cx.ellipse(x, y, r * 0.8, r, 0, 0, 2 * PI); cx.fill();
+      cx.fillStyle = hair;
+      if (messy) for (let i = -3; i <= 3; i++) { cx.beginPath(); cx.ellipse(x + i * r * 0.26, y - r * 0.82 + Math.abs(i) * 3, r * 0.3, r * 0.36, i * 0.3, 0, 2 * PI); cx.fill(); }
+      else for (let i = 0; i < 9; i++) { const a = PI * (0.95 + i * 0.137); cx.beginPath(); cx.arc(x + Math.cos(a) * r * 0.95, y + Math.sin(a) * r * 1.05, r * 0.3, 0, 2 * PI); cx.fill(); }
+      cx.fillStyle = 'rgba(10,12,16,.55)';
+      for (const e of [-1, 1]) { cx.beginPath(); cx.ellipse(x + e * r * 0.32, y - r * 0.05, r * 0.1, r * 0.07, 0, 0, 2 * PI); cx.fill(); }
+    };
+    face(0.34, 0.4, 'rgba(225,228,236,.22)', false);   // Margaret: soft silver curls
+    face(0.68, 0.45, 'rgba(120,85,55,.3)', true);      // Chase: messy brown hair
+    const g = cx.createLinearGradient(sx, sy, sx + sw, sy + sh * 0.6);
+    g.addColorStop(0.45, 'rgba(255,255,255,0)'); g.addColorStop(0.5, 'rgba(255,255,255,.07)'); g.addColorStop(0.58, 'rgba(255,255,255,0)');
+    cx.fillStyle = g; cx.fillRect(sx, sy, sw, sh);
+    cx.restore();
+  };
+  CARDS.deadphone.size = [420, 800];
+
   // =================================================================== 1.2 — "Margarine"
   SCENES['1.2'] = {
     title: 'Margarine', set: 'reddy', env: 'day', time: 'Tue 29 Sep 2026, 09:14',
     playable: ['chase'], swap: false, hud: null, music: 'reddy',
-    spawn: { chase: 'counter_chase', margaret: [-1.0, 0, 6.6, PI + 0.17] },
+    spawn: { chase: 'counter_chase', margaret: [1.0, 0, 7.8, -2.7] },
     steps: [
       ['cutscene', '1.2_open'],
       ['control', 'chase'],
@@ -130,7 +155,7 @@
       ['objective', null],
       ['cutscene', '1.2_end'],
     ],
-    grants: { flags: { seen_popups: true, seen_margarine: true, seen_runaway: true, seen_mfa: true, seen_optin: true, seen_restarts: true } },
+    grants: { flags: { seen_popups: true, seen_margarine: true, seen_runaway: true, seen_backwards: true, seen_mfa: true, seen_optin: true, seen_restarts: true } },
   };
 
   CUTSCENES['1.2_open'] = [
@@ -192,7 +217,7 @@
     { music: 'reddy', fade: 1 },
     // [INSERT] "An MFA code has been sent to the customer's phone." Her phone lies dead on the counter, its black screen
     // reflecting both their faces.
-    { shot: 'INSERT', at: [4.25, 1.0, -8.78], from: [4.2, 1.62, -8.62], fov: 34, card: ['phone', { tone: 'dead' }] },
+    { shot: 'INSERT', at: [4.25, 1.0, -8.78], from: [4.2, 1.62, -8.62], fov: 34, card: ['deadphone', {}] },
     { popup: { msg: "An MFA code has been sent to the customer's phone.", icon: 'info', buttons: [], at: [0.22, 0.48], w: 300 } },
     { flag: 'seen_mfa' },
     { wait: 2.4 },
@@ -231,6 +256,8 @@
     { wait: 0.7 },
     // [JARVIS-CAM] Chase's face, lit by the screen. The screen goes black, and so does he.
     { shot: 'JARVIS', at: 'monitor2', on: 'chase' },
+    { env: { hemi: [0xc0c8da, 0x34343c, 0.75], dir: [0xffe6c2, 0.55] }, dur: 0.3 },   // the room drops away: only the screen lights him
+    { do: (c) => { const s = c.world.torch; if (s) s.intensity *= 1.8; } },
     { wait: 0.9 },
     screen('off'), { sfx: 'sad_beep' }, { do: lightsOut }, { env: { hemi: [0x8a93a8, 0x2a2a30, 0.45], dir: [0xffe6c2, 0.2] }, dur: 0.3 },
     { expr: [['chase', 'stunned']] },
@@ -246,8 +273,9 @@
     EXIT_WIDE,
     { act: [['margaret', 'give', { dur: 1.3 }]] },
     { wait: 1.4 },
-    { move: 'margaret', to: [-2.0, 0, -1.2, 0] },
-    { move: 'margaret', to: [-2.0, 0, 3.6, 0] },
+    { move: 'margaret', to: [1.6, 0, -4.2], speed: 1.5 },           // round the display table, then out through the doors
+    { move: 'margaret', to: [-2.0, 0, -1.2, 0], speed: 1.5 },
+    { move: 'margaret', to: [-2.0, 0, 2.4, 0], speed: 1.5 },
     { despawn: 'margaret' },
     { sfx: 'door_slide', vol: 0.6 },
     { wait: 1.2 },
@@ -259,13 +287,14 @@
     { wait: 1.6 },
     { do: patience },
     { wait: 2.6 },
+    { fade: 'out', dur: 0.8 },
   ];
 
   // =================================================================== 1.3 — "Language Detected"
   SCENES['1.3'] = {
     title: 'Language Detected', set: 'reddy', env: 'day', time: 'Tue 29 Sep 2026, 10:40',
     playable: ['luka'], swap: false, hud: null, music: 'reddy',
-    spawn: { luka: 'counter_luka', chase: [4.45, 0, -11.85, 0.6], dazza: [-2.0, 0, 4.4, PI] },
+    spawn: { luka: 'counter_luka', chase: [4.2, 0, -12.0, 0.6], dazza: [-2.0, 0, 4.4, PI] },
     steps: [
       ['cutscene', '1.3_open'],
       ['control', 'luka'],
@@ -310,7 +339,7 @@
   ];
 
   CUTSCENES['1.3_censor'] = [
-    { place: 'luka', at: [6.75, 0, -10.0, -0.12] }, { place: 'chase', at: [6.0, 0, -10.0, 0.18] },
+    { place: 'luka', at: [6.8, 0, -10.0, -0.12] }, { place: 'chase', at: [5.85, 0, -10.0, 0.2] },
     { expr: [['luka', 'worried'], ['chase', 'worried']] },
     // [JARVIS-CAM] Both faces behind the error.
     { shot: 'JARVIS', at: 'monitor', on: ['luka', 'chase'] },
@@ -340,37 +369,38 @@
     // speaker's face, in rhythm, like a drum pattern.
     { shot: 'JARVIS', at: 'monitor', on: ['luka', 'chase'], locked: true },
     { expr: [['luka', 'determined'], ['chase', 'determined']] },
-    { say: 'luka', text: 'You absolute useless piece of—', censor: true },
+    { say: 'luka', text: 'You absolute useless piece of—', censor: true }, stamp('luka'),
     { say: 'chase', text: 'It can detect SWEARING?', auto: 0.7 },
-    { say: 'luka', text: "It can't detect a driver's licence, but it can detect—", censor: true },
-    { say: 'chase', text: 'You overpriced, over-updated—', censor: true },
-    { say: 'luka', text: '—twenty-four-password—', censor: true },
-    { say: 'chase', text: '—margarine-generating—', censor: true },
+    { say: 'luka', text: "It can't detect a driver's licence, but it can detect—", censor: true }, stamp('luka'),
+    { say: 'chase', text: 'You overpriced, over-updated—', censor: true }, stamp('chase'),
+    { say: 'luka', text: '—twenty-four-password—', censor: true }, stamp('luka'),
+    { say: 'chase', text: '—margarine-generating—', censor: true }, stamp('chase'),
     // The pop-ups stack until the frame is solid white.
     { do: (c) => storm(c, ['Language detected.'], [0.25, 0.25, 0.125, 0.125, 0.25, 0.125, 0.125, 0.125, 0.125, 0.0625, 0.0625, 0.0625, 0.0625, 0.0625, 0.0625, 0.0625, 0.0625], true) },
     { fade: 'out', dur: 0.2, color: '#fff' },
     { popup: null, clear: true },
     // (behind the white: the monitor full of white; the boys on the floor either side of it)
     { do: whiteScreen },
-    { place: 'luka', at: [5.9, 0, -9.85, PI + 0.1] }, { place: 'chase', at: [6.9, 0, -9.85, PI - 0.1] },
+    { place: 'luka', at: [5.75, 0, -9.85, PI - 0.1] }, { place: 'chase', at: [7.05, 0, -9.85, PI + 0.1] },
     { act: [['luka', 'sit', { h: 0.18 }], ['chase', 'sit', { h: 0.18 }]] },
     { expr: [['luka', 'sad'], ['chase', 'sad']] },
-    { shot: 'CAM', pos: [6.4, 1.3, -9.31], look: [6.4, 1.3, -9.0], fov: 48 },
+    { shot: 'CAM', pos: [6.35, 1.28, -9.3], look: [6.35, 1.28, -9.0], fov: 44 },
     { fade: 'in', dur: 0.35 },
     // One last one: "Thanks for your feedback! Rate your experience: ★☆☆☆☆"
     { popup: { msg: 'Thanks for your feedback! Rate your experience: ★☆☆☆☆', icon: 'info', buttons: [], at: 'center', dur: 2.6 } },
     { wait: 2.8 },
     // [PULL OUT · slowly from the white screen] To reveal them both, slumped, one either side of the monitor.
-    { shot: 'CAM', pos: [6.4, 1.3, -9.31], look: [6.4, 1.3, -9.0], fov: 48, to: { pos: [6.4, 1.85, -12.5], look: [6.4, 0.95, -9.4], fov: 46 }, dur: 6, ease: 'out' },
+    { shot: 'CAM', pos: [6.35, 1.28, -9.3], look: [6.35, 1.28, -9.0], fov: 44, to: { pos: [6.4, 1.85, -12.5], look: [6.4, 0.95, -9.4], fov: 46 }, dur: 6, ease: 'out' },
     { wait: 4 },
     { say: 'chase', text: "…That ding's a good sample, though.", speed: 'slow' },
     { say: 'luka', text: "Don't." },
     // [CLOSE · Luka, from slightly above] He twists his lanyard.
-    { shot: 'CLOSE', on: 'luka', dist: 1.25, height: 0.3 },
+    { shot: 'CAM', pos: [6.1, 1.32, -11.05], look: [5.75, 0.74, -9.85], fov: 40 },
     mood('luka', 'anxious'),
     { act: [['luka', 'lanyard']] },
     { wait: 1.2 },
     { say: 'luka', text: '…Should we call the manager?' },
     { wait: 1.2 },
+    { fade: 'out', dur: 0.8 },
   ];
 })();
